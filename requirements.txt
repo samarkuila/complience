@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+python-dateutil
+APScheduler
+PyMuPDF
+playwright        # optional: only for JavaScript-heavy sites (then run: playwright install chromium)
+openai            # optional: only for Azure OpenAI screening
+python-multipart
+python-dotenv

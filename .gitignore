@@ -1,0 +1,11 @@
+# Secrets - never commit
+.env
+
+# Runtime data: database, crawled snapshots, downloaded circulars, generated reports, logs
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

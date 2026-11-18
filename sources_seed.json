@@ -1,0 +1,16 @@
+[
+ {"regulator":"RBI","name":"RBI Notifications","url":"https://www.rbi.org.in/Scripts/NotificationUser.aspx","selector":"","render_js":0,"keywords":"NBFC,Master Direction"},
+ {"regulator":"RBI","name":"RBI Circulars","url":"https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx","selector":"","render_js":0,"keywords":"NBFC"},
+ {"regulator":"TRAI","name":"TRAI Regulations","url":"https://www.trai.gov.in/notifications/regulation","selector":"","render_js":0,"keywords":"SMS,DLT,commercial communication"},
+ {"regulator":"UIDAI","name":"UIDAI Circulars","url":"https://uidai.gov.in/en/about-uidai/legal-framework/circulars","selector":"","render_js":1,"keywords":"Aadhaar,authentication,e-KYC"},
+ {"regulator":"CERSAI","name":"CERSAI Home","url":"https://www.cersai.org.in/CERSAI/home.prg","selector":"","render_js":0,"keywords":"security interest,registry"},
+ {"regulator":"CKYC","name":"CKYC Notices","url":"https://www.ckycindia.in/ckyc/","selector":"","render_js":1,"keywords":"CKYC,KYC"},
+ {"regulator":"NPCI","name":"NPCI Circulars","url":"https://www.npci.org.in/what-we-do/nach/circulars","selector":"","render_js":1,"keywords":"NACH,UPI,mandate"},
+ {"regulator":"MEITY","name":"MeitY Acts & Policies","url":"https://www.meity.gov.in/documents/act-and-policies","selector":"","render_js":0,"keywords":"data protection,cyber,IT Act"},
+ {"regulator":"eGazette","name":"eGazette","url":"https://egazette.gov.in/","selector":"","render_js":1,"keywords":"Ministry of Finance,NBFC"},
+ {"regulator":"FIU India","name":"FIU-IND","url":"https://fiuindia.gov.in/","selector":"","render_js":0,"keywords":"PMLA,STR,AML"},
+ {"regulator":"NFRA","name":"NFRA","url":"https://nfra.gov.in/","selector":"","render_js":0,"keywords":"audit,accounting standard"},
+ {"regulator":"UNSC","name":"UNSC Consolidated List","url":"https://main.un.org/securitycouncil/en/content/un-sc-consolidated-list","selector":"","render_js":0,"keywords":"sanctions,consolidated list"},
+ {"regulator":"MHA","name":"MHA Notifications","url":"https://www.mha.gov.in/en/notifications","selector":"","render_js":0,"keywords":"NBFC"},
+ {"regulator":"IRDAI","name":"IRDAI","url":"https://irdai.gov.in/","selector":"","render_js":1,"keywords":"corporate agent,insurance distribution"}
+]

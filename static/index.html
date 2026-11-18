@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Regulatory Monitoring - Compliance Portal</title>
+<style>
+/* ---- Colour system. Approximation of the TVS Credit palette: replace these values with the official brand tokens. ---- */
+:root{
+  --brand:#0B3C8C; --brand-700:#082F6E; --brand-50:#EAF0FA; --brand-100:#D5E1F5;
+  --accent:#D7263D; --accent-50:#FDECEE;                       /* red: used sparingly, for things that need attention */
+  --ink:#1B2A41; --ink-2:#4A5A73; --ink-3:#7A889E;
+  --line:#E3E8F0; --line-2:#EEF1F6; --bg:#F5F7FB; --panel:#FFFFFF;
+  --ok:#1E8E5A; --ok-50:#E7F5EE; --warn:#B7791F; --warn-50:#FDF4E1; --bad:#C0392B; --bad-50:#FBEAE8;
+  --r:12px; --r-sm:8px; --sh:0 1px 2px rgba(20,35,70,.05),0 6px 20px rgba(20,35,70,.05); --sh-lg:0 20px 60px rgba(15,30,65,.22);
+}
+*{box-sizing:border-box} html{-webkit-text-size-adjust:100%}
+body{margin:0;font:14px/1.5 "Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh}
+a{color:var(--brand);text-decoration:none} a:hover{text-decoration:underline}
+button{font:inherit;cursor:pointer} :focus-visible{outline:3px solid #7FA6E8;outline-offset:2px;border-radius:6px}
+/* sidebar */
+aside{width:236px;background:var(--brand-700);color:#fff;padding:22px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh;flex:none}
+.brand{display:flex;gap:10px;align-items:center;padding:0 8px 22px}.logo{width:34px;height:34px;border-radius:9px;background:#fff;color:var(--brand);display:grid;place-items:center;font-weight:800;font-size:15px;letter-spacing:-.5px}
+.brand b{display:block;font-size:15px;line-height:1.15}.brand span{font-size:11.5px;opacity:.7}
+nav{display:flex;flex-direction:column;gap:2px}
+nav button{display:flex;align-items:center;gap:10px;background:none;border:0;color:#C9D6F0;text-align:left;padding:10px 12px;border-radius:9px;font-weight:500}
+nav button:hover{background:rgba(255,255,255,.08);color:#fff} nav button.on{background:rgba(255,255,255,.14);color:#fff;font-weight:600}
+nav svg{width:18px;height:18px;flex:none;opacity:.9} nav .n{margin-left:auto;background:var(--accent);color:#fff;font-size:11px;font-weight:700;border-radius:10px;padding:1px 7px}
+.side-note{margin-top:auto;font-size:11.5px;color:#9FB3DA;padding:12px 10px;border-top:1px solid rgba(255,255,255,.12);line-height:1.5}
+/* layout */
+.wrap{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:12px;padding:16px 32px;background:var(--panel);border-bottom:1px solid var(--line)}
+.top h1{font-size:19px;margin:0;font-weight:650;letter-spacing:-.2px}.top p{margin:0;color:var(--ink-3);font-size:12.5px}.grow{flex:1}
+main{padding:26px 32px 60px;max-width:1280px;width:100%}
+/* controls */
+.btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:8px 14px;border-radius:var(--r-sm);font-weight:600;font-size:13px;transition:.15s}
+.btn:hover{border-color:#C6D0E0;background:#FAFBFE}.btn.pri{background:var(--brand);border-color:var(--brand);color:#fff}.btn.pri:hover{background:var(--brand-700)}
+.btn.ok{background:var(--ok);border-color:var(--ok);color:#fff}.btn.ok:hover{filter:brightness(.93)}.btn.danger{color:var(--bad)}.btn.sm{padding:5px 10px;font-size:12.5px}.btn:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{font:inherit;width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:var(--r-sm);background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{border-color:var(--brand);outline:3px solid var(--brand-100)} textarea{resize:vertical;min-height:72px}
+label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-2);margin:0 0 5px}.hint{font-size:12px;color:var(--ink-3);margin-top:4px}
+/* cards, stats */
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--sh)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:16px;margin-bottom:22px}
+.stat{padding:18px 20px;position:relative}.stat .lab{font-size:12.5px;color:var(--ink-3);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.stat .val{font-size:32px;font-weight:700;letter-spacing:-1px;margin:4px 0 2px;line-height:1.1}.stat .sub{font-size:12.5px;color:var(--ink-2)}
+.stat .val small{font-size:15px;color:var(--ink-3);font-weight:600;letter-spacing:0}.stat.warn .val{color:var(--accent)}
+.sec{display:flex;align-items:center;gap:10px;margin:0 0 12px}.sec h2{font-size:15px;margin:0;font-weight:650}.sec .grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:20px;font-size:12px;font-weight:600;background:var(--line-2);color:var(--ink-2);white-space:nowrap}
+.pill.ok{background:var(--ok-50);color:var(--ok)}.pill.warn{background:var(--warn-50);color:var(--warn)}.pill.bad{background:var(--bad-50);color:var(--bad)}.pill.brand{background:var(--brand-50);color:var(--brand)}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3);display:inline-block}.dot.ok{background:var(--ok)}.dot.bad{background:var(--accent)}
+/* tables / lists */
+.tbl{width:100%;border-collapse:collapse}.tbl th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-3);text-align:left;padding:11px 16px;background:#FAFBFD;border-bottom:1px solid var(--line);font-weight:650}
+.tbl td{padding:13px 16px;border-bottom:1px solid var(--line-2);vertical-align:middle}.tbl tr:last-child td{border-bottom:0}.tbl tbody tr:hover{background:#FAFBFE}
+.scroll{overflow-x:auto}.muted{color:var(--ink-3)}.sm{font-size:12.5px}.clip{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.empty{padding:44px 20px;text-align:center;color:var(--ink-3)}.empty b{display:block;color:var(--ink-2);font-size:15px;margin-bottom:4px}
+.srcgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px}
+.src{padding:14px 16px;display:flex;gap:12px;align-items:flex-start}.src .dot{margin-top:6px}.src b{display:block}.src .err{font-size:12px;color:var(--bad);margin-top:3px;line-height:1.35}
+/* filters */
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.chip{border:1px solid var(--line);background:#fff;color:var(--ink-2);padding:7px 14px;border-radius:22px;font-weight:600;font-size:13px}
+.chip .c{margin-left:6px;opacity:.65}.chip.on{background:var(--brand);border-color:var(--brand);color:#fff}.chip.on .c{opacity:.85}
+.chips .sp{flex:1}.chips select,.chips input{width:auto;min-width:160px;padding:7px 11px}
+.row{display:grid;grid-template-columns:92px 1fr auto;gap:14px;align-items:center;padding:14px 18px;border-bottom:1px solid var(--line-2);cursor:pointer}
+.row:last-child{border-bottom:0}.row:hover{background:#FAFBFE}.row .t{font-weight:600;margin-bottom:3px}.row .m{display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--ink-3)}
+.reg{font-weight:700;font-size:12px;color:var(--brand);background:var(--brand-50);border-radius:8px;padding:5px 8px;text-align:center}
+/* drawer + modal */
+.veil{position:fixed;inset:0;background:rgba(15,28,55,.38);display:none;z-index:20;backdrop-filter:blur(1px)}.veil.on{display:block}
+.drawer{position:fixed;top:0;right:0;height:100vh;width:min(520px,100vw);background:#fff;box-shadow:var(--sh-lg);z-index:21;transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column}
+.drawer.on{transform:none}.dh{padding:20px 24px 14px;border-bottom:1px solid var(--line)}.dh h3{margin:8px 0 6px;font-size:17px;line-height:1.35}.db{padding:20px 24px;overflow-y:auto;flex:1}.df{padding:14px 24px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:#FAFBFD}
+.kv{display:grid;grid-template-columns:112px 1fr;gap:6px 12px;font-size:13px;margin-bottom:18px}.kv dt{color:var(--ink-3)}.kv dd{margin:0}
+.box{border-radius:10px;padding:12px 14px;margin:0 0 16px;font-size:13px}.box.ai{background:var(--brand-50);border:1px solid var(--brand-100)}.box.warn{background:var(--warn-50);border:1px solid #F0DDB0}.box.ok{background:var(--ok-50);border:1px solid #BFE3CF}
+.box h4{margin:0 0 4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-2)}
+.opt{display:flex;gap:12px;padding:11px 14px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;align-items:flex-start}
+.opt:hover{border-color:#B9C8E4}.opt input{width:auto;margin-top:3px;accent-color:var(--brand)}.opt b{display:block;font-size:13.5px}.opt span{font-size:12.5px;color:var(--ink-3)}
+.opt:has(input:checked){border-color:var(--brand);background:var(--brand-50)}
+.modal{position:fixed;left:50%;top:50%;transform:translate(-50%,-48%);width:min(620px,94vw);max-height:92vh;overflow:auto;background:#fff;border-radius:16px;box-shadow:var(--sh-lg);z-index:22;display:none}
+.modal.on{display:block}.modal .mh{padding:20px 24px 4px}.modal h3{margin:0;font-size:17px}.modal .mb{padding:14px 24px;display:grid;gap:14px}.modal .mf{padding:14px 24px 20px;display:flex;gap:10px;justify-content:flex-end;align-items:center}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.sw{display:flex;gap:10px;align-items:flex-start}.sw input{width:auto;margin-top:3px;accent-color:var(--brand)}
+.testout{font-size:12.5px;border:1px dashed var(--line);border-radius:8px;padding:10px 12px;background:#FAFBFD}.testout ul{margin:6px 0 0;padding-left:18px}
+/* email preview */
+.mail{display:grid;grid-template-columns:260px 1fr;gap:18px;align-items:start}
+.rlist button{display:block;width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:10px;padding:11px 14px;margin-bottom:8px}
+.rlist button.on{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-100)}.rlist b{display:block;font-size:13.5px}
+.mailhead{padding:16px 22px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:70px 1fr;gap:4px 8px;font-size:13px}.mailhead dt{color:var(--ink-3)}.mailhead dd{margin:0}
+.mailbody{width:100%;height:440px;border:0;display:block;background:#fff}.mailfoot{padding:16px 22px;border-top:1px solid var(--line);background:#FAFBFD;border-radius:0 0 var(--r) var(--r)}
+.toasts{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:40;align-items:center}
+.toast{background:var(--ink);color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;box-shadow:var(--sh-lg);max-width:80vw}.toast.bad{background:var(--bad)}
+#viewer{position:fixed;inset:4% 6%;background:#fff;border-radius:14px;box-shadow:var(--sh-lg);display:none;flex-direction:column;z-index:30;overflow:hidden}#viewer.on{display:flex}
+#viewer header{display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line)}#viewer iframe{flex:1;border:0}
+@media(max-width:900px){body{flex-direction:column}aside{width:100%;height:auto;position:static;padding:12px}.side-note{display:none}nav{flex-direction:row;overflow-x:auto}.brand{padding-bottom:10px}
+ main{padding:18px 16px}.top{padding:14px 16px}.mail{grid-template-columns:1fr}.row{grid-template-columns:1fr}.g2{grid-template-columns:1fr}}
+</style></head><body>
+<aside>
+  <div class="brand"><div class="logo">TVS</div><div><b>Compliance Portal</b><span>Regulatory Monitoring</span></div></div>
+  <nav id="nav" aria-label="Main"></nav>
+  <div class="side-note">Automation identifies and drafts. Compliance makes every decision on applicability and wording.</div>
+</aside>
+<div class="wrap">
+  <div class="top"><div><h1 id="ttl"></h1><p id="sub"></p></div><div class="grow"></div><div id="actions"></div></div>
+  <main id="m" tabindex="-1"></main>
+</div>
+<div class="veil" id="veil"></div>
+<div class="drawer" id="drawer" role="dialog" aria-label="Screening decision"></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+<div id="viewer"><header><b>Document viewer</b><button class="btn sm" onclick="closeViewer()">Close</button></header><iframe id="fr" title="Document"></iframe></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script>
+const $=s=>document.querySelector(s);
+const E=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const USER="compliance_user";
+async function api(p,o={}){
+  const isForm=o.body instanceof FormData;
+  const r=await fetch("/api/"+p,{...o,headers:{...(isForm?{}:{"Content-Type":"application/json"}),"X-User":USER,...(o.headers||{})}});
+  const ct=r.headers.get("content-type")||""; const d=ct.includes("json")?await r.json():await r.text();
+  if(!r.ok) throw new Error(d.detail||d||"Something went wrong"); return d;
+}
+function toast(msg,bad){const t=document.createElement("div");t.className="toast"+(bad?" bad":"");t.textContent=msg;$("#toasts").append(t);setTimeout(()=>t.remove(),bad?6000:3200)}
+const guard=fn=>async(...a)=>{try{return await fn(...a)}catch(e){toast(e.message,true)}};
+const ICON={
+ over:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
+ upd:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 12h16M4 19h10"/></svg>',
+ mail:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>',
+ src:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
+ crawl:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 12a8 8 0 0 1 14-5l2 2M20 12a8 8 0 0 1-14 5l-2-2M20 4v5h-5M4 20v-5h5"/></svg>',
+ exc:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3 2 20h20L12 3Zm0 7v5m0 3v.01"/></svg>',
+ aud:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h8l4 4v14H7z"/><path d="M15 3v4h4M10 12h6M10 16h6"/></svg>'};
+const PAGES={over:["Overview","Crawl status across all regulatory sources"],upd:["Updates","New and changed circulars awaiting Compliance screening"],
+ mail:["Daily update","Preview and approve the morning and evening regulatory email"],src:["Source register","Websites and pages being monitored"],
+ crawl:["Crawl history","Every crawl run, with outcome"],exc:["Exceptions","Problems that need a person"],aud:["Audit trail","Who did what, and when"]};
+let cur="over", S={}, F={view:"pending",reg:"",q:""}, timer=null;
+function renderNav(){ $("#nav").innerHTML=Object.keys(PAGES).map(k=>`<button data-k="${k}" class="${k==cur?"on":""}">${ICON[k]}${PAGES[k][0]}${badge(k)}</button>`).join("") }
+const badge=k=>{const n=k=="upd"?S.pending:k=="exc"?S.open_exceptions:k=="mail"?S.reports_awaiting:0;return n?`<span class="n">${n}</span>`:""};
+$("#nav").onclick=e=>{const b=e.target.closest("button");if(b){cur=b.dataset.k;go()}};
+const fdt=s=>{if(!s)return "-";const d=new Date(s);return isNaN(d)?E(s):d.toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false})};
+const fday=s=>{if(!s)return "-";const d=new Date(s);return isNaN(d)?E(s):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})};
+const CT={new:["New","brand"],modified:["Modified","warn"],"backdated/inserted":["Backdated / inserted","bad"],baseline:["Baseline",""]};
+const ctPill=t=>{const [l,c]=CT[t]||[t,""];return `<span class="pill ${c}">${E(l)}</span>`};
+const DEC={implementation_required:["Implementation required","Action is needed. This moves on to the implementation tracker."],
+ potential_future:["Future relevance","Not applicable today, but may become relevant. Keep on watch."],
+ other_function:["Other department","Relevant to another function. Forward for their action."],
+ information_only:["Information only","Noted for awareness. No action required."],
+ not_nbfc_relevant:["Not NBFC relevant","Does not apply to us. A remark is required."]};
+const decPill=s=>s=="pending"?`<span class="pill warn">Pending review</span>`:s=="n/a"?"":`<span class="pill ok">${E((DEC[s]||[s])[0])}</span>`;
+
+async function go(){
+  clearInterval(timer); S=await api("summary").catch(()=>S); renderNav();
+  $("#ttl").textContent=PAGES[cur][0]; $("#sub").textContent=PAGES[cur][1]; $("#actions").innerHTML="";
+  try{ await PAGE[cur]() }catch(e){ $("#m").innerHTML=`<div class="card empty"><b>Could not load this page</b>${E(e.message)}</div>` }
+}
+
+/* ============================== OVERVIEW ============================== */
+const PAGE={};
+PAGE.over=async()=>{
+  const [src,exc]=await Promise.all([api("sources"),api("exceptions")]);
+  $("#actions").innerHTML=`<button class="btn pri" onclick="runCrawl()">Run crawl now</button>`;
+  const open=exc.filter(e=>!e.resolved).slice(0,5);
+  $("#m").innerHTML=`
+  <div class="stats">
+   <div class="card stat"><div class="lab">Sources monitored</div><div class="val">${S.sources_ok}<small> / ${S.sources}</small></div><div class="sub">${S.sources-S.sources_ok?`${S.sources-S.sources_ok} need attention`:"All healthy"}</div></div>
+   <div class="card stat"><div class="lab">New updates</div><div class="val">${S.new_today}</div><div class="sub">today &middot; ${S.new_week} this week</div></div>
+   <div class="card stat"><div class="lab">Last successful crawl</div><div class="val" style="font-size:22px;padding:6px 0">${fdt(S.last_crawl)}</div><div class="sub">Scheduled 09:00 and 18:00 IST</div></div>
+   <div class="card stat ${S.pending?"warn":""}"><div class="lab">Pending review</div><div class="val">${S.pending}</div><div class="sub">${S.pending_relevant} flagged potentially NBFC-relevant</div></div>
+  </div>
+  <div class="sec"><h2>Source status</h2><span class="grow"></span><button class="btn sm" onclick="nav('src')">Manage sources</button></div>
+  <div class="srcgrid">${src.filter(s=>s.active).map(s=>{const bad=s.status=="exception",nc=s.status=="not crawled";
+    return `<div class="card src"><span class="dot ${bad?"bad":nc?"":"ok"}"></span><div style="min-width:0"><b>${E(s.regulator)} <span class="muted" style="font-weight:500">&middot; ${E(s.name)}</span></b>
+      <span class="sm muted">${nc?"Not yet crawled":s.last_success?"Last success "+fdt(s.last_success):"No successful crawl yet"} &middot; ${s.n_updates} update${s.n_updates==1?"":"s"}</span>
+      ${bad&&s.last_error?`<div class="err">${E(friendly(s.last_error))}</div>`:""}</div></div>`}).join("")||`<div class="card empty">No active sources.</div>`}</div>
+  ${S.sources-S.sources_ok?`<p class="sm muted" style="margin-top:12px">A source that failed is <b>not</b> covered by a &ldquo;no update&rdquo; statement. The daily email says so.</p>`:""}
+  ${open.length?`<div class="sec" style="margin-top:26px"><h2>Needs attention</h2><span class="grow"></span><button class="btn sm" onclick="nav('exc')">View all</button></div>
+   <div class="card scroll"><table class="tbl"><tbody>${open.map(e=>`<tr><td><b>${E(e.sname||"System")}</b></td><td class="sm">${E(friendly(e.message))}</td><td class="muted sm">${fdt(e.ts)}</td></tr>`).join("")}</tbody></table></div>`:""}`;
+  if(Date.now()<crawlUntil) timer=setInterval(()=>go(),8000);
+};
+const cap=t=>t.charAt(0).toUpperCase()+t.slice(1);
+const friendly=m=>{m=m||"";
+  if(/Executable doesn't exist/.test(m))return "Browser component is not installed on this machine.";
+  if(/404/.test(m))return "Page address not found (404). The URL may have changed.";
+  if(/No links found/.test(m))return "No links found. The page may be blocking automated access or has changed layout.";
+  if(/Timeout/.test(m))return "The site took too long to respond.";
+  if(/CONNECTION_RESET|RESET/.test(m))return "The site closed the connection. It may be blocking automated access.";
+  if(/bot-check/.test(m))return m.replace(/^.*?:\s*/,"").replace(/^\S.*?\):\s*/,"")||m;
+  return m.split("\n")[0].slice(0,160)};
+let crawlUntil=0;
+const runCrawl=guard(async id=>{await api("crawl/run"+(id?"?source_id="+id:""),{method:"POST"});crawlUntil=Date.now()+180000;toast("Crawl started. Results appear here as each source finishes.");setTimeout(go,1500)});
+const nav=k=>{cur=k;go()};
+
+/* ============================== UPDATES ============================== */
+let ITEMS=[];
+const todayStr=()=>new Date().toLocaleDateString("en-CA"), weekStr=()=>new Date(Date.now()-6*864e5).toLocaleDateString("en-CA");
+const VIEWS={today:["Today",i=>(i.detected_at||"").slice(0,10)==todayStr()],week:["This week",i=>(i.detected_at||"").slice(0,10)>=weekStr()],
+ rel:["NBFC relevant",i=>i.nbfc_flag=="potentially relevant"],pending:["Pending review",i=>i.review_status=="pending"],all:["All",()=>true]};
+PAGE.upd=async()=>{
+  ITEMS=await api("items");
+  const regs=[...new Set(ITEMS.map(i=>i.regulator))].sort();
+  $("#m").innerHTML=`<div class="chips" id="chips"></div><div class="card" id="list"></div>`;
+  $("#chips").innerHTML=Object.entries(VIEWS).map(([k,[l,f]])=>`<button class="chip ${F.view==k?"on":""}" data-v="${k}">${l}<span class="c">${ITEMS.filter(f).length}</span></button>`).join("")+
+   `<span class="sp"></span><select id="freg" aria-label="Regulator"><option value="">All regulators</option>${regs.map(r=>`<option ${F.reg==r?"selected":""}>${E(r)}</option>`).join("")}</select>
+    <input id="fq" type="search" placeholder="Search title" value="${E(F.q)}" aria-label="Search">`;
+  $("#chips").onclick=e=>{const c=e.target.closest(".chip");if(c){F.view=c.dataset.v;drawList(true)}};
+  $("#freg").onchange=e=>{F.reg=e.target.value;drawList()};$("#fq").oninput=e=>{F.q=e.target.value;drawList()};
+  drawList();
+};
+function drawList(redrawChips){
+  if(redrawChips)document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.v==F.view));
+  const rows=ITEMS.filter(VIEWS[F.view][1]).filter(i=>!F.reg||i.regulator==F.reg).filter(i=>!F.q||i.title.toLowerCase().includes(F.q.toLowerCase()));
+  $("#list").innerHTML=rows.length?rows.map(i=>`<div class="row" tabindex="0" data-id="${i.id}" role="button">
+    <div class="reg">${E(i.regulator)}</div>
+    <div><div class="t">${E(i.title)}</div><div class="m">${ctPill(i.change_type)}
+      ${i.nbfc_flag=="potentially relevant"?`<span class="pill brand">Potentially NBFC-relevant</span>`:""}
+      ${i.doc_status&&i.doc_status!="ok"?`<span class="pill bad">Document needs attention</span>`:""}
+      <span>${i.shown_date?"Dated "+fday(i.shown_date)+" &middot; ":""}Found ${fdt(i.detected_at)}</span></div></div>
+    <div>${decPill(i.review_status)}</div></div>`).join(""):
+   `<div class="empty"><b>${ITEMS.length?"Nothing matches these filters":"No updates yet"}</b>${ITEMS.length?"Try another view.":"The first crawl of each source only records its starting state. New and changed items appear from the second crawl onward."}</div>`;
+  $("#list").onclick=e=>{const r=e.target.closest(".row");if(r)openItem(+r.dataset.id)};
+  $("#list").onkeydown=e=>{if(e.key=="Enter"){const r=e.target.closest(".row");if(r)openItem(+r.dataset.id)}};
+}
+let openId=null;
+async function openItem(id,reopen){
+  openId=id; const i=ITEMS.find(x=>x.id==id)||(await api("items?all=1")).find(x=>x.id==id); if(!i)return;
+  const pend=i.review_status=="pending"||reopen, ds=i.doc_status;
+  const docBox=!ds?`<div class="box"><h4>Document</h4><span class="muted">No PDF attached to this item. Use the source link above.</span></div>`:
+    ds=="ok"?`<div class="box ok"><h4>Document</h4>${i.n_paras} paragraphs extracted, each traceable by page and paragraph number.
+      <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" onclick="viewDoc(${i.id})">View PDF</button><button class="btn sm" onclick="showParas(${i.id})">Preview paragraphs</button></div><div id="paras"></div></div>`:
+    `<div class="box warn"><h4>Document needs attention</h4>${ds=="blocked"?"The website showed a bot-check page instead of the PDF. Please download the file yourself and upload it here.":ds=="no_text"?"This PDF is a scanned image with no readable text. Upload a text version, or handle it manually.":"The file could not be read."}
+      <div style="margin-top:8px"><label class="btn sm" style="display:inline-block">Upload PDF<input type="file" accept="application/pdf" hidden onchange="uploadDoc(${i.id},this.files[0])"></label></div></div>`;
+  $("#drawer").innerHTML=`<div class="dh"><div style="display:flex;gap:8px;align-items:center"><span class="reg" style="padding:3px 9px">${E(i.regulator)}</span>${ctPill(i.change_type)}<span class="grow" style="flex:1"></span>
+      <button class="btn sm" onclick="closeDrawer()" aria-label="Close">Close</button></div><h3>${E(i.title)}</h3><a class="sm" href="${E(i.url)}" target="_blank" rel="noopener">Open on regulator website &#8599;</a></div>
+   <div class="db"><dl class="kv"><dt>Source</dt><dd>${E(i.sname)}</dd><dt>Date shown</dt><dd>${fday(i.shown_date)}</dd><dt>Found by crawler</dt><dd>${fdt(i.detected_at)}</dd></dl>
+    <div class="box ai"><h4>Automated screening (suggestion only)</h4><b>${E(cap(i.nbfc_flag||"not screened"))}</b><div class="sm" style="margin-top:3px">${E(i.nbfc_reason||"")}</div></div>
+    ${docBox}
+    <h4 style="margin:20px 0 10px;font-size:13px">Compliance decision</h4>
+    ${pend?`<div id="opts">${Object.entries(DEC).map(([k,[l,d]])=>`<label class="opt"><input type="radio" name="dec" value="${k}" ${i.review_status==k?"checked":""}><div><b>${l}</b><span>${d}</span></div></label>`).join("")}</div>
+      <label for="rem" style="margin-top:12px">Remarks</label><textarea id="rem" placeholder="Reason or note for the record">${E(i.remarks||"")}</textarea>`:
+     `<div class="box ok"><b>${E((DEC[i.review_status]||[i.review_status])[0])}</b><div class="sm" style="margin-top:3px">${E(i.remarks||"No remarks")}</div><div class="sm muted" style="margin-top:6px">Decided by ${E(i.reviewer)} on ${fdt(i.reviewed_at)}</div></div>`}
+   </div>
+   <div class="df">${pend?`<button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" onclick="saveDecision(${i.id})">Save decision</button>`:`<button class="btn" onclick="openItem(${i.id},true)">Change decision</button>`}</div>`;
+  $("#veil").classList.add("on"); $("#drawer").classList.add("on");
+}
+const closeDrawer=()=>{$("#drawer").classList.remove("on");$("#veil").classList.remove("on");$("#modal").classList.remove("on")};
+$("#veil").onclick=closeDrawer; document.addEventListener("keydown",e=>{if(e.key=="Escape"){closeDrawer();closeViewer()}});
+const saveDecision=guard(async id=>{const d=document.querySelector('input[name=dec]:checked');if(!d)return toast("Please choose a decision",true);
+  await api(`items/${id}/review`,{method:"POST",body:JSON.stringify({decision:d.value,remarks:$("#rem").value})});closeDrawer();toast("Decision recorded in the audit trail");go()});
+const viewDoc=id=>{$("#fr").src="/api/doc/"+id;$("#viewer").classList.add("on")}; const closeViewer=()=>{$("#viewer").classList.remove("on");$("#fr").src="about:blank"};
+const showParas=guard(async id=>{const r=await api(`items/${id}/paragraphs`);$("#paras").innerHTML=`<div style="max-height:220px;overflow:auto;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:8px">${r.paragraphs.slice(0,40).map(p=>`<div style="padding:8px 10px;border-bottom:1px solid var(--line-2)"><span class="pill brand">${E(p.trace)}</span><div class="sm" style="margin-top:4px">${E(p.text.slice(0,240))}${p.text.length>240?"&hellip;":""}</div></div>`).join("")}</div>`});
+const uploadDoc=guard(async(id,f)=>{if(!f)return;const fd=new FormData();fd.append("f",f);const r=await api(`items/${id}/upload`,{method:"POST",body:fd});
+  toast(r.status=="ok"?"Document uploaded and read":"Uploaded, but the file could not be read ("+r.status+")",r.status!="ok");ITEMS=await api("items");openItem(id)});
+
+/* ============================== SOURCE REGISTER ============================== */
+let SRC=[];
+PAGE.src=async()=>{
+  SRC=await api("sources"); $("#actions").innerHTML=`<button class="btn pri" onclick="editSrc()">+ Add source</button>`;
+  $("#m").innerHTML=`<div class="card scroll"><table class="tbl"><thead><tr><th>Regulator</th><th>Page</th><th>Status</th><th>Last success</th><th>Updates</th><th>Mode</th><th></th></tr></thead><tbody>
+  ${SRC.map(s=>`<tr style="${s.active?"":"opacity:.55"}"><td><b>${E(s.regulator)}</b></td><td><b class="sm">${E(s.name)}</b><div class="clip sm"><a href="${E(s.url)}" target="_blank" rel="noopener">${E(s.url)}</a></div></td>
+   <td>${s.status=="ok"?`<span class="pill ok">Healthy</span>`:s.status=="exception"?`<span class="pill bad" title="${E(friendly(s.last_error))}">Needs attention</span>`:`<span class="pill">Not crawled</span>`}${s.active?"":` <span class="pill">Paused</span>`}</td>
+   <td class="sm">${fdt(s.last_success)}</td><td>${s.n_updates}</td><td class="sm muted">${s.render_js?"Browser":"Standard"}${s.selector?" &middot; section":""}</td>
+   <td style="white-space:nowrap;text-align:right"><button class="btn sm" onclick="runCrawl(${s.id})">Crawl</button> <button class="btn sm" onclick="editSrc(${s.id})">Edit</button> <button class="btn sm danger" onclick="delSrc(${s.id})">Delete</button></td></tr>`).join("")}
+  </tbody></table></div>`;
+};
+function editSrc(id){
+  const s=SRC.find(x=>x.id==id)||{regulator:"",name:"",url:"",selector:"",render_js:0,keywords:"",active:1};
+  $("#modal").innerHTML=`<div class="mh"><h3>${id?"Edit source":"Add source"}</h3></div><div class="mb">
+   <div class="g2"><div><label for="f1">Regulator</label><input id="f1" value="${E(s.regulator)}" placeholder="e.g. RBI"></div><div><label for="f2">Page name</label><input id="f2" value="${E(s.name)}" placeholder="e.g. RBI Circulars"></div></div>
+   <div><label for="f3">Page address (URL)</label><input id="f3" value="${E(s.url)}" placeholder="https://"></div>
+   <div><label for="f4">Watch only this part of the page (optional)</label><input id="f4" value="${E(s.selector)}" placeholder="Leave blank to watch the whole page"><div class="hint">For pages with many unrelated links. Ask your IT contact for the section name if needed.</div></div>
+   <div><label for="f5">Extra keywords for NBFC screening</label><input id="f5" value="${E(s.keywords)}" placeholder="Comma separated, e.g. NBFC, Master Direction"></div>
+   <label class="sw"><input type="checkbox" id="f6" ${s.render_js?"checked":""}><span><b>Use browser mode</b><div class="hint">Needed when the page builds itself with JavaScript. Slower.</div></span></label>
+   <label class="sw"><input type="checkbox" id="f7" ${s.active?"checked":""}><span><b>Active</b><div class="hint">Untick to pause crawling without losing history.</div></span></label>
+   <div id="tout"></div></div>
+   <div class="mf"><button class="btn" onclick="testSrc()" style="margin-right:auto">Test this page</button><button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" onclick="saveSrc(${id||0})">Save</button></div>`;
+  $("#veil").classList.add("on");$("#modal").classList.add("on");
+}
+const srcBody=()=>({regulator:$("#f1").value.trim(),name:$("#f2").value.trim(),url:$("#f3").value.trim(),selector:$("#f4").value.trim(),keywords:$("#f5").value.trim(),render_js:$("#f6").checked?1:0,active:$("#f7").checked?1:0});
+const testSrc=async()=>{const b=srcBody();if(!b.url)return toast("Enter the page address first",true);$("#tout").innerHTML=`<div class="testout">Checking the page&hellip;</div>`;
+  try{const r=await api("sources/test",{method:"POST",body:JSON.stringify({url:b.url,selector:b.selector,render_js:b.render_js})});
+   $("#tout").innerHTML=`<div class="testout"><b style="color:var(--ok)">Found ${r.count} links.</b> Does this look like the list of circulars?<ul>${r.sample.map(x=>`<li>${E(x.title)}${x.date?` <span class="muted">(${E(x.date)})</span>`:""}</li>`).join("")}</ul></div>`}
+  catch(e){$("#tout").innerHTML=`<div class="testout" style="border-color:var(--bad);color:var(--bad)">${E(e.message)}</div>`}};
+const saveSrc=guard(async id=>{const b=srcBody();if(!b.regulator||!b.name||!b.url)return toast("Regulator, page name and address are required",true);
+  await api(id?"sources/"+id:"sources",{method:id?"PUT":"POST",body:JSON.stringify(b)});closeDrawer();toast("Source saved");go()});
+const delSrc=guard(async id=>{const s=SRC.find(x=>x.id==id);if(!confirm(`Delete "${s.name}"?\n\nA source with crawl history cannot be deleted; you can pause it instead.`))return;
+  try{await api("sources/"+id,{method:"DELETE"});toast("Source deleted");go()}catch(e){
+    if(confirm(e.message+"\n\nPause this source now?")){await api("sources/"+id,{method:"PUT",body:JSON.stringify({...s,active:0})});toast("Source paused");go()}}});
+
+/* ============================== DAILY UPDATE (email preview + approval) ============================== */
+let RPT=[],selR=null;
+PAGE.mail=async()=>{
+  RPT=await api("reports"); if(!selR||!RPT.find(r=>r.name==selR))selR=RPT[0]?.name;
+  $("#actions").innerHTML=`<button class="btn" onclick="genR('morning')">Create morning draft</button> <button class="btn" onclick="genR('evening')">Create evening draft</button>`;
+  if(!RPT.length){$("#m").innerHTML=`<div class="card empty"><b>No daily updates yet</b>Drafts are created automatically after the 09:00 and 18:00 crawls, or create one now.</div>`;return}
+  $("#m").innerHTML=`<div class="mail"><div class="rlist" id="rl">${RPT.map(r=>`<button data-n="${E(r.name)}" class="${r.name==selR?"on":""}"><b>${fday(r.day)} &middot; ${r.cycle=="morning"?"Morning":"Evening"}</b>
+     <span class="pill ${r.status=="approved"?"ok":"warn"}" style="margin-top:4px">${r.status=="approved"?"Approved":"Awaiting approval"}</span></button>`).join("")}</div><div id="prev"></div></div>`;
+  $("#rl").onclick=e=>{const b=e.target.closest("button");if(b){selR=b.dataset.n;PAGE.mail()}};
+  const r=RPT.find(x=>x.name==selR), html=await api("report/"+encodeURIComponent(r.name)), cyc=r.cycle=="morning"?"Morning":"Evening";
+  $("#prev").innerHTML=`<div class="card"><dl class="mailhead"><dt>Subject</dt><dd><b>Regulatory Update &ndash; ${fday(r.day)} (${cyc})</b></dd><dt>To</dt><dd class="muted">Distribution list &ndash; to be configured</dd><dt>Status</dt>
+    <dd>${r.status=="approved"?`<span class="pill ok">Approved by ${E(r.approved_by)} on ${fdt(r.approved_at)}</span>`:`<span class="pill warn">Draft &ndash; not approved</span>`}</dd></dl>
+    <iframe class="mailbody" sandbox title="Email preview" srcdoc="${E('<body style="margin:22px;font-family:Segoe UI,Arial">'+html)}"></iframe>
+    <div class="mailfoot">${r.status=="approved"?`<span class="sm muted">${r.remarks?E(r.remarks)+" &middot; ":""}Approved reports are kept as a record and are not overwritten.</span> <button class="btn sm" style="float:right" onclick="reopenR('${E(r.name)}')">Reopen as draft</button>`:
+     `<label for="arem">Approval note (optional)</label><input id="arem" placeholder="e.g. Checked all flagged items"><div style="display:flex;gap:10px;margin-top:12px;align-items:center"><span class="sm muted" style="flex:1">Email sending is not connected yet. Approval records Compliance&rsquo;s decision.</span>
+       <button class="btn ok" onclick="approveR('${E(r.name)}')">Approve for release</button></div>`}</div></div>`;
+};
+const genR=guard(async c=>{await api("report/generate?cycle="+c,{method:"POST"});toast("Draft created");selR=null;go()});
+const approveR=guard(async n=>{await api(`report/${encodeURIComponent(n)}/approve`,{method:"POST",body:JSON.stringify({remarks:$("#arem").value})});toast("Daily update approved");go()});
+const reopenR=guard(async n=>{await api(`report/${encodeURIComponent(n)}/reopen`,{method:"POST"});go()});
+
+/* ============================== CRAWL HISTORY, EXCEPTIONS, AUDIT ============================== */
+PAGE.crawl=async()=>{const r=await api("crawls");$("#m").innerHTML=r.length?`<div class="card scroll"><table class="tbl"><thead><tr><th>Started</th><th>Source</th><th>Run</th><th>Result</th><th>Links seen</th><th>New / changed</th></tr></thead><tbody>
+  ${r.map(c=>`<tr><td class="sm">${fdt(c.started)}</td><td><b>${E(c.regulator)}</b> <span class="muted sm">${E(c.sname)}</span></td><td class="sm muted">${E(c.cycle)}</td>
+   <td>${c.status=="ok"?`<span class="pill ok">Completed</span>`:c.status=="running"?`<span class="pill brand">Running</span>`:`<span class="pill bad" title="${E(c.error)}">Failed</span>`}</td><td>${c.n_items}</td><td>${c.n_new}</td></tr>`).join("")}</tbody></table></div>`:`<div class="card empty"><b>No crawls yet</b></div>`};
+PAGE.exc=async()=>{const r=await api("exceptions");$("#m").innerHTML=r.length?`<div class="card scroll"><table class="tbl"><thead><tr><th>When</th><th>Source</th><th>Problem</th><th>Where</th><th></th></tr></thead><tbody>
+  ${r.map(e=>`<tr style="${e.resolved?"opacity:.5":""}"><td class="sm">${fdt(e.ts)}</td><td><b class="sm">${E(e.sname||"System")}</b></td><td class="sm" style="max-width:460px">${E(friendly(e.message))}</td><td class="sm muted">${E(e.stage)}</td>
+   <td style="text-align:right">${e.resolved?`<span class="pill ok">Resolved</span>`:`<button class="btn sm" onclick="resolveE(${e.id})">Mark resolved</button>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="card empty"><b>No exceptions</b>Everything is running normally.</div>`};
+const resolveE=guard(async id=>{await api(`exceptions/${id}/resolve`,{method:"POST"});go()});
+PAGE.aud=async()=>{const r=await api("audit");$("#m").innerHTML=`<div class="card scroll"><table class="tbl"><thead><tr><th>When</th><th>User</th><th>Action</th><th>Detail</th></tr></thead><tbody>
+  ${r.map(a=>`<tr><td class="sm" style="white-space:nowrap">${fdt(a.ts)}</td><td class="sm">${E(a.actor)}</td><td><span class="pill">${E(a.action.replace(/_/g," "))}</span></td><td class="sm" style="max-width:520px">${E(a.detail)}</td></tr>`).join("")}</tbody></table></div>`};
+go();
+</script></body></html>
