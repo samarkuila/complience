@@ -1,26 +1,18 @@
 from dotenv import load_dotenv
 load_dotenv()   # reads .env (Azure OpenAI settings) before anything else starts
 import datetime as dt, pathlib, html as H, hashlib, re
-from fastapi import FastAPI, Header, HTTPException, BackgroundTasks, UploadFile, File
+from fastapi import Query, FastAPI, Header, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
-import db, crawler, paragraphs
+import db, crawler, paragraphs, export
+from export import plain
+from fastapi.responses import Response
 from urllib.parse import urlparse
 app = FastAPI(title="Regulatory Crawler")
 DECISIONS = {"information_only", "other_function", "potential_future", "implementation_required", "not_nbfc_relevant"}
 REPORTS = pathlib.Path("data/reports")
-
-def plain(m):
-    """Plain-English version of a technical error, for people reading the daily email."""
-    m = m or ""
-    for pat, txt in [("Executable doesn't exist", "browser component not installed on the server"), ("404", "page address not found (the URL may have changed)"),
-                     ("No links found", "no links found - the site may be blocking automated access or has changed layout"), ("Timeout", "the site took too long to respond"),
-                     ("RESET", "the site closed the connection - it may be blocking automated access"), ("bot-check", "document download blocked by the site - manual download needed"),
-                     ("scanned image", "scanned document with no readable text - manual review needed")]:
-        if pat in m: return txt
-    return m.splitlines()[0][:140] if m else ""
 
 # ---------------------------------------------------------------- daily update report (email body, inline styles so it renders in Outlook)
 def build_report(cycle, day=None):
@@ -65,12 +57,18 @@ def build_report(cycle, day=None):
               (name, day, cycle, db.now(), len(rows)))
     db.audit(c, "system", "report_generated", name); c.commit(); c.close(); return str(REPORTS / name)
 
-def job(cycle): crawler.run_cycle(cycle); build_report(cycle)
+def job(cycle):
+    crawler.run_cycle(cycle); build_report(cycle)
+    try:   # keep a stored Excel copy of every scheduled cycle's crawl report
+        today = dt.date.today().isoformat(); export.save(today, today, cycle, "system")
+    except Exception as e:
+        c = db.conn(); db.log_exc(c, None, "report", f"Could not store the {cycle} Excel report: {e}"); c.commit(); c.close()
 
 @app.on_event("startup")
 def start():
     db.init(); s = BackgroundScheduler(timezone="Asia/Kolkata")
-    s.add_job(job, "cron", hour=9, minute=0, args=["morning"]); s.add_job(job, "cron", hour=18, minute=0, args=["evening"]); s.start()
+    s.add_job(job, "cron", hour=9, minute=0, args=["morning"], id="morning"); s.add_job(job, "cron", hour=18, minute=0, args=["evening"], id="evening"); s.start()
+    app.state.sched = s
 
 class SourceIn(BaseModel):
     regulator: str; name: str; url: str; selector: str = ""; render_js: int = 0; keywords: str = ""; active: int = 1
@@ -84,6 +82,11 @@ def q(sql, args=()):
     c = db.conn(); r = [dict(x) for x in c.execute(sql, args)]; c.close(); return r
 
 # ---------------------------------------------------------------- summary
+def next_run():
+    try:
+        t = [j.next_run_time for j in app.state.sched.get_jobs() if j.next_run_time]
+        return min(t).isoformat() if t else None
+    except Exception: return None
 @app.get("/api/summary")
 def summary():
     t = dt.date.today(); wk = (t - dt.timedelta(days=6)).isoformat(); t = t.isoformat()
@@ -96,7 +99,8 @@ def summary():
             "pending": n("SELECT COUNT(*) n FROM items WHERE review_status='pending'"),
             "pending_relevant": n("SELECT COUNT(*) n FROM items WHERE review_status='pending' AND nbfc_flag='potentially relevant'"),
             "open_exceptions": n("SELECT COUNT(*) n FROM exceptions WHERE resolved=0"),
-            "reports_awaiting": n("SELECT COUNT(*) n FROM reports WHERE status='draft'")}
+            "reports_awaiting": n("SELECT COUNT(*) n FROM reports WHERE status='draft'"),
+            "next_run": next_run()}
 
 # ---------------------------------------------------------------- source register
 @app.get("/api/sources")
@@ -126,10 +130,10 @@ def delete_source(sid: int, x_user: str = Header("compliance_user")):
     c.execute("DELETE FROM sources WHERE id=?", (sid,)); db.audit(c, x_user, "source_deleted", str(sid)); c.commit(); return {"ok": True}
 KNOWN_REGULATORS = ["RBI", "TRAI", "UIDAI", "CERSAI", "CKYC", "NPCI", "MEITY", "eGazette", "FIU India", "NFRA", "UNSC", "MHA", "IRDAI"]  # suggestions only
 class BulkRow(BaseModel):
-    regulator: str = ""; name: str = ""; url: str
+    regulator: str = ""; name: str = ""; url: str; render_js: int | None = None   # per-row browser mode; blank = use the batch setting
 class BulkIn(BaseModel):
     rows: list[BulkRow]; render_js: int = 0
-def _norm_url(u): return re.sub(r"#.*$", "", u.strip().lower()).rstrip("/")
+def _norm_url(u): return re.sub(r"^https?://(www\.)?", "", re.sub(r"#.*$", "", u.strip().lower())).rstrip("/")   # http/https, www. and trailing slash do not make a different page
 def _auto_name(url):
     u = urlparse(url); return ((u.netloc.replace("www.", "") + u.path).strip("/") or url)[:70]
 @app.get("/api/regulators")
@@ -150,7 +154,7 @@ def bulk_add(b: BulkIn, x_user: str = Header("compliance_user")):
         if _norm_url(url) in seen: out.append({"row": n, "url": url, "status": "duplicate", "message": "Already in the register"}); continue
         name = r.name.strip() or _auto_name(url); base, k = name, 2
         while name.lower() in names: name = f"{base} ({k})"; k += 1
-        c.execute("INSERT INTO sources(regulator,name,url,render_js) VALUES(?,?,?,?)", (reg, name, url, b.render_js))
+        c.execute("INSERT INTO sources(regulator,name,url,render_js) VALUES(?,?,?,?)", (reg, name, url, b.render_js if r.render_js is None else r.render_js))
         seen.add(_norm_url(url)); names.add(name.lower()); added += 1
         out.append({"row": n, "url": url, "status": "added", "message": f"Added as {reg} / {name}"})
     db.audit(c, x_user, "sources_bulk_added", f"{added} added, {len(b.rows) - added} skipped, of {len(b.rows)} rows"); c.commit(); c.close()
@@ -172,14 +176,68 @@ def run_now(bg: BackgroundTasks, source_id: int = None):
 @app.get("/api/crawls")
 def crawls(): return q("SELECT c.*,s.name sname,s.regulator FROM crawls c JOIN sources s ON s.id=c.source_id ORDER BY c.id DESC LIMIT 200")
 
+@app.get("/api/export/crawl")
+def export_crawl(format: str = "xlsx", date_from: str = "", date_to: str = "", x_user: str = Header("compliance_user")):
+    """Download the crawl details report (Excel or PDF) for a date range. Defaults to the last 7 days."""
+    if format not in ("xlsx", "pdf"): raise HTTPException(400, "format must be xlsx or pdf")
+    today = dt.date.today(); try_d = lambda v, dflt: dt.date.fromisoformat(v) if v else dflt
+    try: d_to = try_d(date_to, today); d_from = try_d(date_from, d_to - dt.timedelta(days=6))
+    except ValueError: raise HTTPException(400, "Dates must look like 2026-11-18")
+    if d_from > d_to: raise HTTPException(400, "The start date is after the end date")
+    if (d_to - d_from).days > 366: raise HTTPException(400, "Please choose a range of one year or less")
+    data = export.gather(d_from.isoformat(), d_to.isoformat())
+    body = export.to_xlsx(data) if format == "xlsx" else export.to_pdf(data)
+    c = db.conn(); db.audit(c, x_user, "report_exported", f"crawl details {format} {d_from}..{d_to}: {data['totals']['runs']} runs, {data['totals']['updates']} updates"); c.commit(); c.close()
+    mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" if format == "xlsx" else "application/pdf"
+    return Response(body, media_type=mime, headers={"Content-Disposition": f'attachment; filename="crawl_report_{d_from}_to_{d_to}.{format}"'})
+
+@app.post("/api/export/crawl/save")
+def save_crawl_report(date_from: str = "", date_to: str = "", x_user: str = Header("compliance_user")):
+    """Store an Excel crawl report in the reports folder (kept as a record, listed under Saved reports)."""
+    today = dt.date.today()
+    try:
+        d_to = dt.date.fromisoformat(date_to) if date_to else today; d_from = dt.date.fromisoformat(date_from) if date_from else d_to - dt.timedelta(days=6)
+    except ValueError: raise HTTPException(400, "Dates must look like 2026-11-18")
+    if d_from > d_to: raise HTTPException(400, "The start date is after the end date")
+    if (d_to - d_from).days > 366: raise HTTPException(400, "Please choose a range of one year or less")
+    return {"name": export.save(d_from.isoformat(), d_to.isoformat(), "manual", x_user)}
+@app.get("/api/saved-reports")
+def saved_reports():
+    return {"folder": str(export.report_dir().resolve()), "reports": q("SELECT id,name,period_from,period_to,label,created_at,created_by,size,n_runs,n_updates FROM saved_reports ORDER BY id DESC LIMIT 200")}
+@app.get("/api/saved-reports/{name}")
+def saved_report_file(name: str):
+    r = q("SELECT path FROM saved_reports WHERE name=?", (pathlib.Path(name).name,))   # only files recorded in the database can be fetched
+    if not r or not pathlib.Path(r[0]["path"]).exists(): raise HTTPException(404, "Report file not found")
+    return FileResponse(r[0]["path"], filename=pathlib.Path(r[0]["path"]).name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
 # ---------------------------------------------------------------- updates + Compliance decision
+LATEST = "d.id=(SELECT MAX(id) FROM documents WHERE item_id=d.item_id AND url=d.url)"      # only the newest version of each document
 @app.get("/api/items")
-def items(status: str = "", all: int = 0):
-    w = "i.change_type!='baseline'" if not all else "1=1"
-    if status: w += " AND i.review_status=?"
-    return q(f"SELECT i.*,s.regulator,s.name sname,(SELECT status FROM documents d WHERE d.item_id=i.id ORDER BY d.id DESC LIMIT 1) doc_status,"
-             f"(SELECT COUNT(*) FROM paragraphs p JOIN documents d ON d.id=p.document_id WHERE d.item_id=i.id AND d.id=(SELECT MAX(id) FROM documents WHERE item_id=i.id)) n_paras "
-             f"FROM items i JOIN sources s ON s.id=i.source_id WHERE {w} ORDER BY i.detected_at DESC LIMIT 300", (status,) if status else ())
+def items(status: str = "", all: int = 0, scope: str = "", q_: str = Query("", alias="q"), limit: int = 300):
+    """scope='existing' = items that were already on the site at the first crawl; default = new/changed updates."""
+    w, args = ("i.change_type='baseline'" if scope == "existing" else "1=1" if all else "i.change_type!='baseline'"), []
+    if status: w += " AND i.review_status=?"; args.append(status)
+    if q_.strip(): w += " AND i.title LIKE ?"; args.append(f"%{q_.strip()}%")
+    order = "(SELECT COUNT(*) FROM documents d WHERE d.item_id=i.id) DESC, i.id ASC" if scope == "existing" else "i.detected_at DESC"
+    return q(f"SELECT i.*,s.regulator,s.name sname,"
+             f"(SELECT CASE WHEN d.status='copy_blocked' THEN 'ok' ELSE d.status END FROM documents d WHERE d.item_id=i.id AND {LATEST} ORDER BY (d.status IN ('ok','copy_blocked')), d.id DESC LIMIT 1) doc_status,"
+             f"(SELECT COUNT(*) FROM documents d WHERE d.item_id=i.id AND {LATEST}) n_docs,"
+             f"(SELECT COUNT(*) FROM paragraphs p JOIN documents d ON d.id=p.document_id WHERE d.item_id=i.id AND {LATEST}) n_paras "
+             f"FROM items i JOIN sources s ON s.id=i.source_id WHERE {w} ORDER BY {order} LIMIT ?", tuple(args) + (max(1, min(limit, 1000)),))
+@app.post("/api/items/{iid}/capture")
+def capture_item(iid: int, x_user: str = Header("compliance_user")):
+    """Read the content behind one item now (page text and any PDF / Word / Excel it links to)."""
+    c = db.conn(); it = c.execute("SELECT i.id,i.url,i.title,i.source_id FROM items i WHERE i.id=?", (iid,)).fetchone()
+    if not it: raise HTTPException(404, "Unknown item")
+    src = dict(c.execute("SELECT * FROM sources WHERE id=?", (it["source_id"],)).fetchone())
+    crawler.process_item(c, iid, src, it["url"], it["title"])
+    n = c.execute("SELECT COUNT(*) FROM documents WHERE item_id=?", (iid,)).fetchone()[0]
+    db.audit(c, x_user, "content_captured", f"item {iid}: {n} document(s)"); c.commit(); c.close()
+    return {"documents": n}
+@app.post("/api/capture")
+def capture_many(bg: BackgroundTasks, source_id: int = None, limit: int = 10):
+    """Read the content of items already on the site at the first crawl (newest first), in the background."""
+    bg.add_task(crawler.capture_existing, source_id, max(1, min(limit, 200))); return {"started": True}
 @app.post("/api/items/{iid}/review")
 def review(iid: int, r: ReviewIn, x_user: str = Header("compliance_user")):
     if r.decision not in DECISIONS: raise HTTPException(400, "Unknown decision")
@@ -190,25 +248,43 @@ def review(iid: int, r: ReviewIn, x_user: str = Header("compliance_user")):
     c.execute("UPDATE items SET review_status=?,reviewer=?,remarks=?,reviewed_at=? WHERE id=?", (r.decision, x_user, r.remarks, db.now(), iid))
     db.audit(c, x_user, "item_reviewed", f"item {iid}: {it['review_status']} -> {r.decision}; AI flag was '{it['nbfc_flag']}'"
              f"{' (OVERRIDE of AI suggestion)' if override else ''}; remarks: {r.remarks}"); c.commit(); return {"ok": True}
+@app.get("/api/items/{iid}/documents")
+def item_documents(iid: int):
+    """Everything captured for an item: the web page text and each PDF / Word / Excel file (newest version of each)."""
+    return q(f"SELECT d.id,d.kind,d.url,d.status,d.pages,d.version,d.sha256,d.fetched_at,d.pdf_title title,(SELECT COUNT(*) FROM paragraphs p WHERE p.document_id=d.id) n_paras "
+             f"FROM documents d WHERE d.item_id=? AND {LATEST} ORDER BY d.id", (iid,))
 @app.get("/api/items/{iid}/paragraphs")
-def item_paragraphs(iid: int):
-    d = q("SELECT * FROM documents WHERE item_id=? ORDER BY id DESC LIMIT 1", (iid,))
-    if not d: raise HTTPException(404, "No document stored for this item")
-    rows = q("SELECT * FROM paragraphs WHERE document_id=? ORDER BY seq", (d[0]["id"],))
-    for r in rows: r["trace"] = paragraphs.trace_label({"ref": r["para_ref"], "seq": r["seq"], "page": r["page"], "page_end": r["page_end"]})
-    return {"document": d[0], "paragraphs": rows}
+def item_paragraphs(iid: int, document_id: int = 0):
+    docs = item_documents(iid)
+    if not docs: raise HTTPException(404, "No document stored for this item")
+    d = next((x for x in docs if x["id"] == document_id), None) or next((x for x in docs if x["status"] == "ok"), docs[0])
+    rows = q("SELECT * FROM paragraphs WHERE document_id=? ORDER BY seq", (d["id"],))
+    for r in rows: r["trace"] = paragraphs.trace_label({"ref": r["para_ref"], "seq": r["seq"], "page": r["page"], "page_end": r["page_end"], "kind": d["kind"]})
+    return {"document": d, "paragraphs": rows}
+@app.get("/api/document/{did}/file")
+def document_file(did: int):
+    """The stored original (PDF, saved web page, Word, Excel). Only files recorded in the database can be fetched."""
+    r = q("SELECT path,kind FROM documents WHERE id=?", (did,))
+    if not r or not r[0]["path"] or not pathlib.Path(r[0]["path"]).exists(): raise HTTPException(404, "No file is kept for this document - only its text is stored")
+    k, p = r[0]["kind"], r[0]["path"]
+    if k == "pdf": return FileResponse(p, media_type="application/pdf")
+    if k == "html": return FileResponse(p, media_type="text/html", headers={"Content-Security-Policy": "sandbox; script-src 'none'; connect-src 'none'"})   # saved page can never run scripts
+    return FileResponse(p, filename=pathlib.Path(p).name)
 @app.post("/api/items/{iid}/upload")
 async def upload_doc(iid: int, f: UploadFile = File(...), x_user: str = Header("compliance_user")):
-    """Manual fallback when the site blocks automated download: a person downloads the PDF and uploads it here."""
-    data = await f.read()
-    if not data.startswith(b"%PDF"): raise HTTPException(400, "Not a PDF file")
+    """Manual fallback when a site blocks automated download: a person downloads the file and uploads it here (PDF, Word .docx or Excel .xlsx)."""
+    data = await f.read(); ext = pathlib.Path(f.filename or "").suffix.lower()
+    if data.startswith(b"%PDF"): ext = ".pdf"
+    elif data[:2] == b"PK" and ext in (".docx", ".xlsx"): pass
+    else: raise HTTPException(400, "Please upload a PDF, Word (.docx) or Excel (.xlsx) file")
     if len(data) > 50_000_000: raise HTTPException(400, "File larger than 50 MB")
     sha = hashlib.sha256(data).hexdigest(); d = pathlib.Path("data/docs/manual") / dt.date.today().isoformat(); d.mkdir(parents=True, exist_ok=True)
-    p = d / f"{sha[:8]}_{re.sub(r'[^A-Za-z0-9_.-]', '_', f.filename or 'upload.pdf')[:80]}"; p.write_bytes(data)
+    p = d / f"{sha[:8]}_{re.sub(r'[^A-Za-z0-9_.-]', '_', pathlib.Path(f.filename or 'upload').stem)[:70]}{ext}"; p.write_bytes(data)
     c = db.conn(); it = c.execute("SELECT url FROM items WHERE id=?", (iid,)).fetchone()
     if not it: raise HTTPException(404, "Unknown item")
-    did, status, newver = paragraphs.ingest(c, iid, it["url"], str(p), sha, db.now())
-    if status == "ok": c.execute("UPDATE items SET pdf_path=? WHERE id=?", (str(p), iid))
+    bad = c.execute(f"SELECT url FROM documents d WHERE d.item_id=? AND d.status!='ok' AND {LATEST} ORDER BY d.id DESC LIMIT 1", (iid,)).fetchone()   # replaces the file that failed
+    did, status, newver = paragraphs.ingest(c, iid, bad["url"] if bad else it["url"], str(p), sha, db.now())
+    if status == "ok" and ext == ".pdf": c.execute("UPDATE items SET pdf_path=? WHERE id=?", (str(p), iid))
     db.audit(c, x_user, "document_uploaded", f"item {iid}: {f.filename} sha256={sha[:12]} status={status}"); c.commit(); c.close()
     return {"document_id": did, "status": status, "new_version": newver}
 @app.get("/api/doc/{iid}")
@@ -233,23 +309,17 @@ def gen(cycle: str = "morning"):
     return {"file": build_report(cycle)}
 @app.get("/api/reports")
 def reports():
-    rows = {r["name"]: r for r in q("SELECT * FROM reports")}
-    if REPORTS.exists():       # reports created before approval tracking existed count as drafts
-        for f in REPORTS.glob("*.html"):
-            if f.name not in rows:
-                d, cyc = f.stem.split("_", 1); rows[f.name] = {"name": f.name, "day": d, "cycle": cyc, "status": "draft", "generated_at": None, "n_items": None}
-    return sorted(rows.values(), key=lambda r: (r["day"], r["cycle"]), reverse=True)
+    """The database is the only list of reports. Files left in data/reports (for example after a database reset) are not shown."""
+    return q("SELECT * FROM reports ORDER BY day DESC, cycle DESC")
 @app.get("/api/report/{name}", response_class=HTMLResponse)
 def report(name: str):
-    f = REPORTS / pathlib.Path(name).name
-    if not f.exists(): raise HTTPException(404, "Report not found")
+    name = pathlib.Path(name).name; f = REPORTS / name
+    if not q("SELECT 1 FROM reports WHERE name=?", (name,)) or not f.exists(): raise HTTPException(404, "Report not found")
     return f.read_text(encoding="utf-8")
 @app.post("/api/report/{name}/approve")
 def approve_report(name: str, a: ApproveIn, x_user: str = Header("compliance_user")):
     name = pathlib.Path(name).name; c = db.conn()
-    if not (REPORTS / name).exists(): raise HTTPException(404, "Report not found")
-    d, cyc = name.replace(".html", "").split("_", 1)
-    c.execute("INSERT INTO reports(name,day,cycle,status) VALUES(?,?,?, 'draft') ON CONFLICT(name) DO NOTHING", (name, d, cyc))
+    if not c.execute("SELECT 1 FROM reports WHERE name=?", (name,)).fetchone() or not (REPORTS / name).exists(): raise HTTPException(404, "Report not found")
     c.execute("UPDATE reports SET status='approved',approved_by=?,approved_at=?,remarks=? WHERE name=?", (x_user, db.now(), a.remarks, name))
     db.audit(c, x_user, "report_approved", f"{name}; remarks: {a.remarks}"); c.commit(); return {"ok": True}
 @app.post("/api/report/{name}/reopen")

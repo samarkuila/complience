@@ -131,7 +131,7 @@ const badge=k=>{const n=k=="upd"?S.pending:k=="exc"?S.open_exceptions:k=="mail"?
 $("#nav").onclick=e=>{const b=e.target.closest("button");if(b){cur=b.dataset.k;go()}};
 const fdt=s=>{if(!s)return "-";const d=new Date(s);return isNaN(d)?E(s):d.toLocaleString("en-IN",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit",hour12:false})};
 const fday=s=>{if(!s)return "-";const d=new Date(s);return isNaN(d)?E(s):d.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"})};
-const CT={new:["New","brand"],modified:["Modified","warn"],"backdated/inserted":["Backdated / inserted","bad"],baseline:["Baseline",""]};
+const CT={new:["New","brand"],modified:["Modified","warn"],"backdated/inserted":["Backdated / inserted","bad"],baseline:["Existing item",""]};
 const ctPill=t=>{const [l,c]=CT[t]||[t,""];return `<span class="pill ${c}">${E(l)}</span>`};
 const DEC={implementation_required:["Implementation required","Action is needed. This moves on to the implementation tracker."],
  potential_future:["Future relevance","Not applicable today, but may become relevant. Keep on watch."],
@@ -156,7 +156,7 @@ PAGE.over=async()=>{
   <div class="stats">
    <div class="card stat"><div class="lab">Sources monitored</div><div class="val">${S.sources_ok}<small> / ${S.sources}</small></div><div class="sub">${S.sources-S.sources_ok?`${S.sources-S.sources_ok} need attention`:"All healthy"}</div></div>
    <div class="card stat"><div class="lab">New updates</div><div class="val">${S.new_today}</div><div class="sub">today &middot; ${S.new_week} this week</div></div>
-   <div class="card stat"><div class="lab">Last successful crawl</div><div class="val" style="font-size:22px;padding:6px 0">${fdt(S.last_crawl)}</div><div class="sub">Scheduled 09:00 and 18:00 IST</div></div>
+   <div class="card stat"><div class="lab">Last successful crawl</div><div class="val" style="font-size:22px;padding:6px 0">${fdt(S.last_crawl)}</div><div class="sub">${S.next_run?"Next scheduled: "+fdt(S.next_run):"Scheduler not running"}</div></div>
    <div class="card stat ${S.pending?"warn":""}"><div class="lab">Pending review</div><div class="val">${S.pending}</div><div class="sub">${S.pending_relevant} flagged potentially NBFC-relevant</div></div>
   </div>
   <div class="sec"><h2>Source status</h2><span class="grow"></span><button class="btn sm" onclick="nav('src')">Manage sources</button></div>
@@ -181,78 +181,95 @@ const friendly=m=>{m=m||"";
 let crawlUntil=0;
 const runCrawl=guard(async id=>{await api("crawl/run"+(id?"?source_id="+id:""),{method:"POST"});crawlUntil=Date.now()+180000;toast("Crawl started. Results appear here as each source finishes.");setTimeout(go,1500)});
 const nav=k=>{cur=k;go()};
+const captureSrc=guard(async id=>{await api("capture?limit=10"+(id?"&source_id="+id:""),{method:"POST"});toast("Reading the latest 10 existing items"+(id?"":" of every source")+". This takes a minute or two. Check Updates > Existing items.")});
 
 /* ============================== UPDATES ============================== */
 let ITEMS=[];
 const todayStr=()=>new Date().toLocaleDateString("en-CA"), weekStr=()=>new Date(Date.now()-6*864e5).toLocaleDateString("en-CA");
 const VIEWS={today:["Today",i=>(i.detected_at||"").slice(0,10)==todayStr()],week:["This week",i=>(i.detected_at||"").slice(0,10)>=weekStr()],
- rel:["NBFC relevant",i=>i.nbfc_flag=="potentially relevant"],pending:["Pending review",i=>i.review_status=="pending"],all:["All",()=>true]};
+ rel:["NBFC relevant",i=>i.nbfc_flag=="potentially relevant"],pending:["Pending review",i=>i.review_status=="pending"],all:["All updates",()=>true],existing:["Existing items",()=>true]};
+let EXISTING=[], exTimer=null;
+async function loadExisting(){EXISTING=await api("items?scope=existing&limit=300&q="+encodeURIComponent(F.q));drawList()}
 PAGE.upd=async()=>{
   ITEMS=await api("items");
   const regs=[...new Set(ITEMS.map(i=>i.regulator))].sort();
   $("#m").innerHTML=`<div class="chips" id="chips"></div><div class="card" id="list"></div>`;
-  $("#chips").innerHTML=Object.entries(VIEWS).map(([k,[l,f]])=>`<button class="chip ${F.view==k?"on":""}" data-v="${k}">${l}<span class="c">${ITEMS.filter(f).length}</span></button>`).join("")+
+  $("#chips").innerHTML=Object.entries(VIEWS).map(([k,[l,f]])=>`<button class="chip ${F.view==k?"on":""}" data-v="${k}">${l}${k=="existing"?"":`<span class="c">${ITEMS.filter(f).length}</span>`}</button>`).join("")+
    `<span class="sp"></span><select id="freg" aria-label="Regulator"><option value="">All regulators</option>${regs.map(r=>`<option ${F.reg==r?"selected":""}>${E(r)}</option>`).join("")}</select>
     <input id="fq" type="search" placeholder="Search title" value="${E(F.q)}" aria-label="Search">`;
-  $("#chips").onclick=e=>{const c=e.target.closest(".chip");if(c){F.view=c.dataset.v;drawList(true)}};
-  $("#freg").onchange=e=>{F.reg=e.target.value;drawList()};$("#fq").oninput=e=>{F.q=e.target.value;drawList()};
-  drawList();
+  $("#chips").onclick=e=>{const c=e.target.closest(".chip");if(c){F.view=c.dataset.v;if(F.view=="existing")loadExisting();drawList(true)}};
+  $("#freg").onchange=e=>{F.reg=e.target.value;drawList()};$("#fq").oninput=e=>{F.q=e.target.value;if(F.view=="existing"){clearTimeout(exTimer);exTimer=setTimeout(loadExisting,300)}else drawList()};
+  if(F.view=="existing")loadExisting(); else drawList();
 };
 function drawList(redrawChips){
   if(redrawChips)document.querySelectorAll(".chip").forEach(c=>c.classList.toggle("on",c.dataset.v==F.view));
-  const rows=ITEMS.filter(VIEWS[F.view][1]).filter(i=>!F.reg||i.regulator==F.reg).filter(i=>!F.q||i.title.toLowerCase().includes(F.q.toLowerCase()));
+  const rows=(F.view=="existing"?EXISTING:ITEMS.filter(VIEWS[F.view][1])).filter(i=>!F.reg||i.regulator==F.reg).filter(i=>F.view=="existing"||!F.q||i.title.toLowerCase().includes(F.q.toLowerCase()));
   $("#list").innerHTML=rows.length?rows.map(i=>`<div class="row" tabindex="0" data-id="${i.id}" role="button">
     <div class="reg">${E(i.regulator)}</div>
     <div><div class="t">${E(i.title)}</div><div class="m">${ctPill(i.change_type)}
       ${i.nbfc_flag=="potentially relevant"?`<span class="pill brand">Potentially NBFC-relevant</span>`:""}
       ${i.doc_status&&i.doc_status!="ok"?`<span class="pill bad">Document needs attention</span>`:""}
+      ${i.change_type=="baseline"?(i.n_paras?`<span class="pill ok">${i.n_paras} paragraphs captured</span>`:`<span class="pill">Content not read yet</span>`):""}
       <span>${i.shown_date?"Dated "+fday(i.shown_date)+" &middot; ":""}Found ${fdt(i.detected_at)}</span></div></div>
     <div>${decPill(i.review_status)}</div></div>`).join(""):
-   `<div class="empty"><b>${ITEMS.length?"Nothing matches these filters":"No updates yet"}</b>${ITEMS.length?"Try another view.":"The first crawl of each source only records its starting state. New and changed items appear from the second crawl onward."}</div>`;
+   `<div class="empty"><b>${F.view=="existing"?"No existing items found":ITEMS.length?"Nothing matches these filters":"No new updates yet"}</b>${F.view=="existing"?"Existing items are the pages already on the website when monitoring started.":ITEMS.length?"Try another view.":"New and changed items appear here from the second crawl onward. To read pages that were already on the website, open <b>Existing items</b>."}</div>`;
   $("#list").onclick=e=>{const r=e.target.closest(".row");if(r)openItem(+r.dataset.id)};
   $("#list").onkeydown=e=>{if(e.key=="Enter"){const r=e.target.closest(".row");if(r)openItem(+r.dataset.id)}};
 }
 let openId=null;
 async function openItem(id,reopen){
-  openId=id; const i=ITEMS.find(x=>x.id==id)||(await api("items?all=1")).find(x=>x.id==id); if(!i)return;
+  openId=id; const i=ITEMS.find(x=>x.id==id)||EXISTING.find(x=>x.id==id)||(await api("items?all=1")).find(x=>x.id==id); if(!i)return;
   const pend=i.review_status=="pending"||reopen, ds=i.doc_status;
-  const docBox=!ds?`<div class="box"><h4>Document</h4><span class="muted">No PDF attached to this item. Use the source link above.</span></div>`:
-    ds=="ok"?`<div class="box ok"><h4>Document</h4>${i.n_paras} paragraphs extracted, each traceable by page and paragraph number.
-      <div style="margin-top:8px;display:flex;gap:8px"><button class="btn sm" onclick="viewDoc(${i.id})">View PDF</button><button class="btn sm" onclick="showParas(${i.id})">Preview paragraphs</button></div><div id="paras"></div></div>`:
-    `<div class="box warn"><h4>Document needs attention</h4>${ds=="blocked"?"The website showed a bot-check page instead of the PDF. Please download the file yourself and upload it here.":ds=="no_text"?"This PDF is a scanned image with no readable text. Upload a text version, or handle it manually.":"The file could not be read."}
-      <div style="margin-top:8px"><label class="btn sm" style="display:inline-block">Upload PDF<input type="file" accept="application/pdf" hidden onchange="uploadDoc(${i.id},this.files[0])"></label></div></div>`;
+  const docBox=`<div id="docs"><div class="box"><h4>Captured content</h4><span class="muted">Loading&hellip;</span></div></div>`;
   $("#drawer").innerHTML=`<div class="dh"><div style="display:flex;gap:8px;align-items:center"><span class="reg" style="padding:3px 9px">${E(i.regulator)}</span>${ctPill(i.change_type)}<span class="grow" style="flex:1"></span>
       <button class="btn sm" onclick="closeDrawer()" aria-label="Close">Close</button></div><h3>${E(i.title)}</h3><a class="sm" href="${E(i.url)}" target="_blank" rel="noopener">Open on regulator website &#8599;</a></div>
    <div class="db"><dl class="kv"><dt>Source</dt><dd>${E(i.sname)}</dd><dt>Date shown</dt><dd>${fday(i.shown_date)}</dd><dt>Found by crawler</dt><dd>${fdt(i.detected_at)}</dd></dl>
     <div class="box ai"><h4>Automated screening (suggestion only)</h4><b>${E(cap(i.nbfc_flag||"not screened"))}</b><div class="sm" style="margin-top:3px">${E(i.nbfc_reason||"")}</div></div>
     ${docBox}
     <h4 style="margin:20px 0 10px;font-size:13px">Compliance decision</h4>
-    ${pend?`<div id="opts">${Object.entries(DEC).map(([k,[l,d]])=>`<label class="opt"><input type="radio" name="dec" value="${k}" ${i.review_status==k?"checked":""}><div><b>${l}</b><span>${d}</span></div></label>`).join("")}</div>
+    ${i.change_type=="baseline"&&i.review_status=="n/a"&&!reopen?`<div class="box"><b>Existing item</b><div class="sm muted" style="margin-top:3px">This was already on the website when monitoring started, so it is not in the review queue.</div></div>`:
+    pend?`<div id="opts">${Object.entries(DEC).map(([k,[l,d]])=>`<label class="opt"><input type="radio" name="dec" value="${k}" ${i.review_status==k?"checked":""}><div><b>${l}</b><span>${d}</span></div></label>`).join("")}</div>
       <label for="rem" style="margin-top:12px">Remarks</label><textarea id="rem" placeholder="Reason or note for the record">${E(i.remarks||"")}</textarea>`:
      `<div class="box ok"><b>${E((DEC[i.review_status]||[i.review_status])[0])}</b><div class="sm" style="margin-top:3px">${E(i.remarks||"No remarks")}</div><div class="sm muted" style="margin-top:6px">Decided by ${E(i.reviewer)} on ${fdt(i.reviewed_at)}</div></div>`}
    </div>
-   <div class="df">${pend?`<button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" onclick="saveDecision(${i.id})">Save decision</button>`:`<button class="btn" onclick="openItem(${i.id},true)">Change decision</button>`}</div>`;
-  $("#veil").classList.add("on"); $("#drawer").classList.add("on");
+   <div class="df">${i.change_type=="baseline"&&i.review_status=="n/a"&&!reopen?`<button class="btn" onclick="closeDrawer()">Close</button>`:pend?`<button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" onclick="saveDecision(${i.id})">Save decision</button>`:`<button class="btn" onclick="openItem(${i.id},true)">Change decision</button>`}</div>`;
+  $("#veil").classList.add("on"); $("#drawer").classList.add("on"); loadDocs(i.id);
 }
 const closeDrawer=()=>{$("#drawer").classList.remove("on");$("#veil").classList.remove("on");$("#modal").classList.remove("on")};
 $("#veil").onclick=closeDrawer; document.addEventListener("keydown",e=>{if(e.key=="Escape"){closeDrawer();closeViewer()}});
 const saveDecision=guard(async id=>{const d=document.querySelector('input[name=dec]:checked');if(!d)return toast("Please choose a decision",true);
   await api(`items/${id}/review`,{method:"POST",body:JSON.stringify({decision:d.value,remarks:$("#rem").value})});closeDrawer();toast("Decision recorded in the audit trail");go()});
-const viewDoc=id=>{$("#fr").src="/api/doc/"+id;$("#viewer").classList.add("on")}; const closeViewer=()=>{$("#viewer").classList.remove("on");$("#fr").src="about:blank"};
-const showParas=guard(async id=>{const r=await api(`items/${id}/paragraphs`);$("#paras").innerHTML=`<div style="max-height:220px;overflow:auto;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:8px">${r.paragraphs.slice(0,40).map(p=>`<div style="padding:8px 10px;border-bottom:1px solid var(--line-2)"><span class="pill brand">${E(p.trace)}</span><div class="sm" style="margin-top:4px">${E(p.text.slice(0,240))}${p.text.length>240?"&hellip;":""}</div></div>`).join("")}</div>`});
+const viewDoc=id=>{$("#fr").src="/api/document/"+id+"/file";$("#viewer").classList.add("on")}; const closeViewer=()=>{$("#viewer").classList.remove("on");$("#fr").src="about:blank"};
+const KL={pdf:"PDF",html:"Web page",word:"Word",excel:"Excel","word (old)":"Word (old)","excel (old)":"Excel (old)",archive:"Archive",file:"File"};
+const WHYUI={copy_blocked:"The website blocked the automated download of this PDF, but the page text was captured. Upload the PDF only if you need the original.",blocked:"The website showed a bot-check page instead of the content. Download the file yourself and upload it here.",no_text:"Scanned image with no readable text. Upload a text version, or handle it manually.",unsupported:"Old Word/Excel or archive file. Saved, but not read. Open it manually, or upload a .docx / .xlsx version.",unreadable:"The file could not be read."};
+const dname=u=>{try{const x=new URL(u);return decodeURIComponent(x.pathname.split("/").filter(Boolean).pop()||x.hostname)}catch(e){return u}};
+const captureItem=guard(async id=>{toast("Reading the page and its files...");const r=await api(`items/${id}/capture`,{method:"POST"});toast(r.documents?`Captured ${r.documents} document(s)`:"The page had no readable content or files");ITEMS=await api("items");if(F.view=="existing")await loadExisting();openItem(id)});
+async function loadDocs(id){
+  const d=await api(`items/${id}/documents`).catch(()=>[]); const box=$("#docs"); if(!box)return;
+  if(!d.length){box.innerHTML=`<div class="box"><h4>Captured content</h4><span class="muted">Nothing captured yet. The crawler reads the web page text and any PDF, Word or Excel file linked from an update.</span><div style="margin-top:8px"><button class="btn sm" onclick="captureItem(${id})">Read content now</button></div></div>`;return}
+  const attn=d.filter(x=>!["ok","copy_blocked"].includes(x.status)), bad=d.filter(x=>x.status!="ok");
+  box.innerHTML=`<div class="box ${attn.length?"warn":"ok"}"><h4>Captured content (${d.length})</h4>
+   ${d.map(x=>`<div style="padding:8px 0;border-top:1px solid rgba(0,0,0,.07)"><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="pill brand">${E(KL[x.kind]||x.kind)}</span><b class="sm" style="word-break:break-all">${E(dname(x.url))}</b>
+     ${x.status=="ok"?`<span class="pill ok">${x.n_paras} paragraphs</span>`:x.status=="copy_blocked"?`<span class="pill warn">PDF copy blocked</span>`:`<span class="pill bad">Needs attention</span>`}</div>
+     ${x.status!="ok"?`<div class="sm" style="margin-top:4px">${E(WHYUI[x.status]||"")}</div>`:""}
+     <div style="margin-top:6px;display:flex;gap:6px">${x.kind=="pdf"?`<button class="btn sm" onclick="viewDoc(${x.id})">View PDF</button>`:x.kind=="html"?`<a class="btn sm" href="${E(x.url)}" target="_blank" rel="noopener">Open original page</a>`:`<a class="btn sm" href="/api/document/${x.id}/file">Download</a>`}
+       ${x.status=="ok"?`<button class="btn sm" onclick="showParas(${id},${x.id})">Preview text</button>`:""}</div></div>`).join("")}
+   ${bad.length?`<div style="margin-top:10px"><label class="btn sm" style="display:inline-block">Upload a file<input type="file" accept=".pdf,.docx,.xlsx" hidden onchange="uploadDoc(${id},this.files[0])"></label></div>`:""}
+   <div id="paras"></div></div>`}
+const showParas=guard(async(id,did)=>{const r=await api(`items/${id}/paragraphs?document_id=${did}`);$("#paras").innerHTML=`<div style="max-height:240px;overflow:auto;margin-top:10px;background:#fff;border:1px solid var(--line);border-radius:8px">${r.paragraphs.slice(0,60).map(p=>`<div style="padding:8px 10px;border-bottom:1px solid var(--line-2)"><span class="pill brand">${E(p.trace)}</span><div class="sm" style="margin-top:4px">${E(p.text.slice(0,260))}${p.text.length>260?"&hellip;":""}</div></div>`).join("")}${r.paragraphs.length>60?`<div class="sm muted" style="padding:8px 10px">Showing 60 of ${r.paragraphs.length}. The full text is in the Excel report.</div>`:""}</div>`});
 const uploadDoc=guard(async(id,f)=>{if(!f)return;const fd=new FormData();fd.append("f",f);const r=await api(`items/${id}/upload`,{method:"POST",body:fd});
   toast(r.status=="ok"?"Document uploaded and read":"Uploaded, but the file could not be read ("+r.status+")",r.status!="ok");ITEMS=await api("items");openItem(id)});
 
 /* ============================== SOURCE REGISTER ============================== */
 let SRC=[];
 PAGE.src=async()=>{
-  SRC=await api("sources"); $("#actions").innerHTML=`<button class="btn" onclick="bulkSrc()">Bulk add</button> <button class="btn pri" onclick="editSrc()">+ Add source</button>`;
+  SRC=await api("sources"); $("#actions").innerHTML=`<button class="btn" onclick="captureSrc()" title="Read the text of the latest 10 existing items of every source">Read content (all)</button> <button class="btn" onclick="bulkSrc()">Bulk add</button> <button class="btn pri" onclick="editSrc()">+ Add source</button>`;
   if(!SRC.length){$("#m").innerHTML=`<div class="card empty"><b>No sources yet</b>Add the regulatory pages you want monitored, one at a time or many at once.<div style="margin-top:14px"><button class="btn" onclick="bulkSrc()">Bulk add</button> <button class="btn pri" onclick="editSrc()">+ Add source</button></div></div>`;return}
   $("#m").innerHTML=`<div class="card scroll"><table class="tbl"><thead><tr><th>Regulator</th><th>Page</th><th>Status</th><th>Last success</th><th>Updates</th><th>Mode</th><th></th></tr></thead><tbody>
   ${SRC.map(s=>`<tr style="${s.active?"":"opacity:.55"}"><td><b>${E(s.regulator)}</b></td><td><b class="sm">${E(s.name)}</b><div class="clip sm"><a href="${E(s.url)}" target="_blank" rel="noopener">${E(s.url)}</a></div></td>
    <td>${s.status=="ok"?`<span class="pill ok">Healthy</span>`:s.status=="exception"?`<span class="pill bad" title="${E(friendly(s.last_error))}">Needs attention</span>`:`<span class="pill">Not crawled</span>`}${s.active?"":` <span class="pill">Paused</span>`}</td>
    <td class="sm">${fdt(s.last_success)}</td><td>${s.n_updates}</td><td class="sm muted">${s.render_js?"Browser":"Standard"}${s.selector?" &middot; section":""}</td>
-   <td style="white-space:nowrap;text-align:right"><button class="btn sm" onclick="runCrawl(${s.id})">Crawl</button> <button class="btn sm" onclick="editSrc(${s.id})">Edit</button> <button class="btn sm danger" onclick="delSrc(${s.id})">Delete</button></td></tr>`).join("")}
+   <td style="white-space:nowrap;text-align:right"><button class="btn sm" onclick="runCrawl(${s.id})">Crawl</button> <button class="btn sm" onclick="captureSrc(${s.id})" title="Read the text of the latest 10 existing items">Read content</button> <button class="btn sm" onclick="editSrc(${s.id})">Edit</button> <button class="btn sm danger" onclick="delSrc(${s.id})">Delete</button></td></tr>`).join("")}
   </tbody></table></div>`;
 };
 function editSrc(id){
@@ -288,9 +305,9 @@ async function bulkSrc(){
    <div class="g2"><div><label for="b1">Regulator for all rows below</label><input id="b1" list="regs" placeholder="e.g. RBI"><datalist id="regs">${regs.map(r=>`<option value="${E(r)}">`).join("")}</datalist>
      <div class="hint">Applied to every row that doesn't name its own regulator.</div></div>
     <div><label>Or upload a CSV file</label><label class="btn" style="display:block;text-align:center;margin:0">Choose file<input type="file" accept=".csv,text/csv" hidden onchange="bulkFile(this.files[0])"></label>
-     <div class="hint"><a href="#" onclick="bulkTemplate();return false">Download template</a> (columns: regulator, name, url)</div></div></div>
+     <div class="hint"><a href="#" onclick="bulkTemplate();return false">Download template</a> (columns: regulator, name, url, browser)</div></div></div>
    <div><label for="b2">Page addresses, one per line</label><textarea id="b2" style="min-height:150px;font:12.5px/1.5 Consolas,monospace" placeholder="https://www.rbi.org.in/Scripts/NotificationUser.aspx&#10;RBI Circulars | https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx&#10;TRAI | TRAI Regulations | https://www.trai.gov.in/..." oninput="BULK=[];$('#bout').innerHTML=''"></textarea>
-     <div class="hint">Each line can be: <b>URL</b> &nbsp;or&nbsp; <b>Page name | URL</b> &nbsp;or&nbsp; <b>Regulator | Page name | URL</b>. Pasting from Excel works too.</div></div>
+     <div class="hint">Each line can be: <b>URL</b> &nbsp;or&nbsp; <b>Page name | URL</b> &nbsp;or&nbsp; <b>Regulator | Page name | URL</b>, optionally followed by <b>| yes</b> for browser mode. Pasting from Excel works too.</div></div>
    <label class="sw"><input type="checkbox" id="b3"><span><b>Use browser mode for these pages</b><div class="hint">Only for pages that build themselves with JavaScript. Slower. Can be changed per source later.</div></span></label>
    <div id="bout"></div></div>
    <div class="mf"><button class="btn" onclick="bulkCheck()" style="margin-right:auto">Check</button><button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" id="bgo" onclick="bulkGo()">Import</button></div>`;
@@ -300,9 +317,9 @@ function bulkParse(){
   const def=$("#b1").value.trim(); const rows=[];
   $("#b2").value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
     const parts=l.split(/\s*[|	]\s*/).map(x=>x.trim()); let ui=parts.findIndex(x=>/^https?:\/\//i.test(x)); if(ui<0)ui=parts.length-1;
-    const url=parts[ui]||"", pre=parts.slice(0,ui); let reg=def,name="";      // keep blank cells so columns stay in place
+    const url=parts[ui]||"", pre=parts.slice(0,ui), after=parts.slice(ui+1).find(x=>x!=="")||""; let reg=def,name="";      // keep blank cells so columns stay in place
     if(pre.length>=2){reg=pre[0]||def;name=pre[1]} else if(pre.length==1){name=pre[0]}
-    rows.push({regulator:reg,name,url});
+    const row={regulator:reg,name,url}; if(/^(yes|y|1|true|browser)$/i.test(after))row.render_js=1; else if(/^(no|n|0|false|standard)$/i.test(after))row.render_js=0; rows.push(row);
   }); return rows;
 }
 function bulkCheck(){
@@ -330,7 +347,7 @@ const bulkFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{
   if(cell||row.length){row.push(cell);rows.push(row)}
   const head=(rows[0]||[]).map(x=>x.trim().toLowerCase()), hasHead=head.includes("url"), ix=n=>head.indexOf(n);
   const body=(hasHead?rows.slice(1):rows).filter(r=>r.some(x=>x.trim()));
-  $("#b2").value=body.map(r=>hasHead?[r[ix("regulator")]||"",r[ix("name")]||"",r[ix("url")]||""].map(x=>x.trim()).join(" | "):r.map(x=>x.trim()).join(" | ")).join("\n");
+  $("#b2").value=body.map(r=>hasHead?[r[ix("regulator")]||"",r[ix("name")]||"",r[ix("url")]||"",ix("browser")>=0?(r[ix("browser")]||""):""].map(x=>x.trim()).join(" | "):r.map(x=>x.trim()).join(" | ")).join("\n");
   toast(`${body.length} row(s) loaded from ${f.name}. Review them, then click Check.`);BULK=[];$("#bout").innerHTML=""};rd.readAsText(f)};
 const bulkTemplate=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["regulator,name,url\nRBI,RBI Circulars,https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx\nTRAI,TRAI Regulations,https://www.trai.gov.in/\n"],{type:"text/csv"}));a.download="sources_template.csv";a.click()};
 
@@ -356,9 +373,26 @@ const approveR=guard(async n=>{await api(`report/${encodeURIComponent(n)}/approv
 const reopenR=guard(async n=>{await api(`report/${encodeURIComponent(n)}/reopen`,{method:"POST"});go()});
 
 /* ============================== CRAWL HISTORY, EXCEPTIONS, AUDIT ============================== */
-PAGE.crawl=async()=>{const r=await api("crawls");$("#m").innerHTML=r.length?`<div class="card scroll"><table class="tbl"><thead><tr><th>Started</th><th>Source</th><th>Run</th><th>Result</th><th>Links seen</th><th>New / changed</th></tr></thead><tbody>
+const isoDay=d=>d.toLocaleDateString("en-CA");
+PAGE.crawl=async()=>{const r=await api("crawls");
+  $("#m").innerHTML=`<div class="card" style="padding:14px 18px;margin-bottom:16px;display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap">
+    <div><label for="xf">From</label><input id="xf" type="date" style="width:auto" value="${isoDay(new Date(Date.now()-6*864e5))}"></div>
+    <div><label for="xt">To</label><input id="xt" type="date" style="width:auto" value="${isoDay(new Date())}"></div>
+    <div style="display:flex;gap:8px"><button class="btn pri" onclick="dl('xlsx')">Download Excel</button><button class="btn" onclick="dl('pdf')">Download PDF</button><button class="btn" onclick="saveRep()">Save Excel to reports folder</button></div>
+    <div class="sm muted" style="flex:1;min-width:220px">The report includes crawl runs, source health, updates found with their Compliance decisions, and exceptions for the chosen dates.</div></div><div id="saved"></div><div id="ct"></div>`; loadSaved();
+  $("#ct").innerHTML=r.length?`<div class="card scroll"><table class="tbl"><thead><tr><th>Started</th><th>Source</th><th>Run</th><th>Result</th><th>Links seen</th><th>New / changed</th></tr></thead><tbody>
   ${r.map(c=>`<tr><td class="sm">${fdt(c.started)}</td><td><b>${E(c.regulator)}</b> <span class="muted sm">${E(c.sname)}</span></td><td class="sm muted">${E(c.cycle)}</td>
    <td>${c.status=="ok"?`<span class="pill ok">Completed</span>`:c.status=="running"?`<span class="pill brand">Running</span>`:`<span class="pill bad" title="${E(c.error)}">Failed</span>`}</td><td>${c.n_items}</td><td>${c.n_new}</td></tr>`).join("")}</tbody></table></div>`:`<div class="card empty"><b>No crawls yet</b></div>`};
+const fsz=n=>n>1048576?(n/1048576).toFixed(1)+" MB":Math.max(1,Math.round(n/1024))+" KB";
+async function loadSaved(){const r=await api("saved-reports").catch(()=>null);if(!r)return;
+  $("#saved").innerHTML=`<div class="sec"><h2>Saved reports</h2><span class="sm muted">Stored in <b>${E(r.folder)}</b>. An Excel report is saved automatically after each 09:00 and 18:00 crawl.</span></div>
+   <div class="card scroll" style="margin-bottom:22px">${r.reports.length?`<table class="tbl"><thead><tr><th>Report</th><th>Period</th><th>Saved</th><th>Runs</th><th>Updates</th><th>Size</th><th></th></tr></thead><tbody>
+   ${r.reports.map(x=>`<tr><td class="sm"><b>${E(x.name)}</b></td><td class="sm">${E(x.period_from)}${x.period_to!=x.period_from?" to "+E(x.period_to):""}</td><td class="sm">${fdt(x.created_at)} &middot; ${E(x.created_by)}</td><td>${x.n_runs}</td><td>${x.n_updates}</td><td class="sm muted">${fsz(x.size)}</td>
+   <td style="text-align:right"><a class="btn sm" href="/api/saved-reports/${encodeURIComponent(x.name)}">Download</a></td></tr>`).join("")}</tbody></table>`:`<div class="empty" style="padding:22px">No saved reports yet. Use &ldquo;Save Excel to reports folder&rdquo;, or wait for the next scheduled crawl.</div>`}</div>`}
+const saveRep=guard(async()=>{const a=$("#xf").value,b=$("#xt").value;if(!a||!b)return toast("Choose both dates",true);if(a>b)return toast("The start date is after the end date",true);
+  const r=await api("export/crawl/save?date_from="+a+"&date_to="+b,{method:"POST"});toast("Saved as "+r.name);loadSaved()});
+const dl=(f)=>{const a=$("#xf").value,b=$("#xt").value;if(!a||!b)return toast("Choose both dates",true);if(a>b)return toast("The start date is after the end date",true);
+  window.location="/api/export/crawl?format="+f+"&date_from="+a+"&date_to="+b;toast("Preparing your "+(f=="pdf"?"PDF":"Excel")+" report")};
 PAGE.exc=async()=>{const r=await api("exceptions");$("#m").innerHTML=r.length?`<div class="card scroll"><table class="tbl"><thead><tr><th>When</th><th>Source</th><th>Problem</th><th>Where</th><th></th></tr></thead><tbody>
   ${r.map(e=>`<tr style="${e.resolved?"opacity:.5":""}"><td class="sm">${fdt(e.ts)}</td><td><b class="sm">${E(e.sname||"System")}</b></td><td class="sm" style="max-width:460px">${E(friendly(e.message))}</td><td class="sm muted">${E(e.stage)}</td>
    <td style="text-align:right">${e.resolved?`<span class="pill ok">Resolved</span>`:`<button class="btn sm" onclick="resolveE(${e.id})">Mark resolved</button>`}</td></tr>`).join("")}</tbody></table></div>`:`<div class="card empty"><b>No exceptions</b>Everything is running normally.</div>`};

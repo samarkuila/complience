@@ -9,3 +9,6 @@ playwright        # optional: only for JavaScript-heavy sites (then run: playwri
 openai            # optional: only for Azure OpenAI screening
 python-multipart
 python-dotenv
+openpyxl
+reportlab
+python-docx

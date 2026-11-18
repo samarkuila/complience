@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS paragraphs(id INTEGER PRIMARY KEY, document_id INTEGE
   para_ref TEXT, kind TEXT, section TEXT, text TEXT, UNIQUE(document_id,seq));
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY, name TEXT UNIQUE, day TEXT, cycle TEXT, status TEXT DEFAULT 'draft',
   generated_at TEXT, n_items INTEGER, approved_by TEXT, approved_at TEXT, remarks TEXT);
+CREATE TABLE IF NOT EXISTS saved_reports(id INTEGER PRIMARY KEY, name TEXT UNIQUE, path TEXT, period_from TEXT, period_to TEXT, label TEXT,
+  created_at TEXT, created_by TEXT, size INTEGER, n_runs INTEGER, n_updates INTEGER);
 CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, ts TEXT, actor TEXT, action TEXT, detail TEXT);
 """
 def now(): return dt.datetime.now().isoformat(timespec="seconds")
@@ -28,4 +30,8 @@ def log_exc(c, sid, stage, msg):
     c.execute("INSERT INTO exceptions(ts,source_id,stage,message) VALUES(?,?,?,?)", (now(), sid, stage, str(msg)[:500]))
 def init():
     c = conn(); c.executescript(SCHEMA)
+    try: c.execute("ALTER TABLE documents ADD COLUMN kind TEXT DEFAULT 'pdf'")      # added later: file type (pdf, html, word, excel)
+    except sqlite3.OperationalError: pass
+    try: c.execute("ALTER TABLE items ADD COLUMN content_checked TEXT")          # when the crawler last tried to read this item's content
+    except sqlite3.OperationalError: pass
     c.commit(); c.close()
