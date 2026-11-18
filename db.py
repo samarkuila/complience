@@ -1,4 +1,4 @@
-import sqlite3, json, pathlib, datetime as dt
+import sqlite3, pathlib, datetime as dt
 DB = pathlib.Path("data/crawler.db")
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS sources(id INTEGER PRIMARY KEY, regulator TEXT, name TEXT UNIQUE, url TEXT, selector TEXT DEFAULT '',
@@ -28,9 +28,4 @@ def log_exc(c, sid, stage, msg):
     c.execute("INSERT INTO exceptions(ts,source_id,stage,message) VALUES(?,?,?,?)", (now(), sid, stage, str(msg)[:500]))
 def init():
     c = conn(); c.executescript(SCHEMA)
-    if not c.execute("SELECT 1 FROM sources").fetchone():
-        for s in json.load(open("sources_seed.json")):
-            c.execute("INSERT INTO sources(regulator,name,url,selector,render_js,keywords) VALUES(?,?,?,?,?,?)",
-                      (s["regulator"], s["name"], s["url"], s["selector"], s["render_js"], s["keywords"]))
-        audit(c, "system", "seed_sources", "Loaded initial source register")
     c.commit(); c.close()

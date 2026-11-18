@@ -12,6 +12,13 @@ Open http://127.0.0.1:8000
 - Failed pages go to Exceptions, and the daily report says they are NOT covered by a "no update" confirmation.
 - Optional AI screening: set AZURE_OPENAI_ENDPOINT, AZURE_OPENAI_API_KEY, AZURE_OPENAI_DEPLOYMENT.
 
-## Before relying on it
-The seed URLs in sources_seed.json are starting points. Compliance must verify each URL and, where a page has many unrelated
-links, set a CSS selector (Sources tab / sources_seed.json) so only the notification list is watched.
+## Adding sources
+Nothing is pre-loaded. Open **Source register** and either:
+- **+ Add source** for one page, or
+- **Bulk add** to paste many URLs (one per line) or upload a CSV with columns `regulator,name,url`. Rows are checked first; duplicates and bad addresses are skipped and reported.
+
+Use **Test this page** to confirm the crawler finds the circular list before saving. Where a page has many unrelated links,
+set the "watch only this part of the page" selector so only the notification list is watched.
+
+## Settings
+Copy your Azure OpenAI details into `.env` (see the file for the names). Leave blank to use keyword screening only.

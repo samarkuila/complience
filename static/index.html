@@ -163,7 +163,7 @@ PAGE.over=async()=>{
   <div class="srcgrid">${src.filter(s=>s.active).map(s=>{const bad=s.status=="exception",nc=s.status=="not crawled";
     return `<div class="card src"><span class="dot ${bad?"bad":nc?"":"ok"}"></span><div style="min-width:0"><b>${E(s.regulator)} <span class="muted" style="font-weight:500">&middot; ${E(s.name)}</span></b>
       <span class="sm muted">${nc?"Not yet crawled":s.last_success?"Last success "+fdt(s.last_success):"No successful crawl yet"} &middot; ${s.n_updates} update${s.n_updates==1?"":"s"}</span>
-      ${bad&&s.last_error?`<div class="err">${E(friendly(s.last_error))}</div>`:""}</div></div>`}).join("")||`<div class="card empty">No active sources.</div>`}</div>
+      ${bad&&s.last_error?`<div class="err">${E(friendly(s.last_error))}</div>`:""}</div></div>`}).join("")||`<div class="card empty"><b>No sources yet</b>Add the pages to monitor in the Source register.<div style="margin-top:12px"><button class="btn pri" onclick="nav('src')">Go to Source register</button></div></div>`}</div>
   ${S.sources-S.sources_ok?`<p class="sm muted" style="margin-top:12px">A source that failed is <b>not</b> covered by a &ldquo;no update&rdquo; statement. The daily email says so.</p>`:""}
   ${open.length?`<div class="sec" style="margin-top:26px"><h2>Needs attention</h2><span class="grow"></span><button class="btn sm" onclick="nav('exc')">View all</button></div>
    <div class="card scroll"><table class="tbl"><tbody>${open.map(e=>`<tr><td><b>${E(e.sname||"System")}</b></td><td class="sm">${E(friendly(e.message))}</td><td class="muted sm">${fdt(e.ts)}</td></tr>`).join("")}</tbody></table></div>`:""}`;
@@ -246,7 +246,8 @@ const uploadDoc=guard(async(id,f)=>{if(!f)return;const fd=new FormData();fd.appe
 /* ============================== SOURCE REGISTER ============================== */
 let SRC=[];
 PAGE.src=async()=>{
-  SRC=await api("sources"); $("#actions").innerHTML=`<button class="btn pri" onclick="editSrc()">+ Add source</button>`;
+  SRC=await api("sources"); $("#actions").innerHTML=`<button class="btn" onclick="bulkSrc()">Bulk add</button> <button class="btn pri" onclick="editSrc()">+ Add source</button>`;
+  if(!SRC.length){$("#m").innerHTML=`<div class="card empty"><b>No sources yet</b>Add the regulatory pages you want monitored, one at a time or many at once.<div style="margin-top:14px"><button class="btn" onclick="bulkSrc()">Bulk add</button> <button class="btn pri" onclick="editSrc()">+ Add source</button></div></div>`;return}
   $("#m").innerHTML=`<div class="card scroll"><table class="tbl"><thead><tr><th>Regulator</th><th>Page</th><th>Status</th><th>Last success</th><th>Updates</th><th>Mode</th><th></th></tr></thead><tbody>
   ${SRC.map(s=>`<tr style="${s.active?"":"opacity:.55"}"><td><b>${E(s.regulator)}</b></td><td><b class="sm">${E(s.name)}</b><div class="clip sm"><a href="${E(s.url)}" target="_blank" rel="noopener">${E(s.url)}</a></div></td>
    <td>${s.status=="ok"?`<span class="pill ok">Healthy</span>`:s.status=="exception"?`<span class="pill bad" title="${E(friendly(s.last_error))}">Needs attention</span>`:`<span class="pill">Not crawled</span>`}${s.active?"":` <span class="pill">Paused</span>`}</td>
@@ -277,6 +278,61 @@ const saveSrc=guard(async id=>{const b=srcBody();if(!b.regulator||!b.name||!b.ur
 const delSrc=guard(async id=>{const s=SRC.find(x=>x.id==id);if(!confirm(`Delete "${s.name}"?\n\nA source with crawl history cannot be deleted; you can pause it instead.`))return;
   try{await api("sources/"+id,{method:"DELETE"});toast("Source deleted");go()}catch(e){
     if(confirm(e.message+"\n\nPause this source now?")){await api("sources/"+id,{method:"PUT",body:JSON.stringify({...s,active:0})});toast("Source paused");go()}}});
+
+
+/* ---- Bulk add: paste lines or upload CSV, check, then import ---- */
+let BULK=[];
+async function bulkSrc(){
+  const regs=await api("regulators").catch(()=>[]);
+  $("#modal").innerHTML=`<div class="mh"><h3>Bulk add sources</h3></div><div class="mb">
+   <div class="g2"><div><label for="b1">Regulator for all rows below</label><input id="b1" list="regs" placeholder="e.g. RBI"><datalist id="regs">${regs.map(r=>`<option value="${E(r)}">`).join("")}</datalist>
+     <div class="hint">Applied to every row that doesn't name its own regulator.</div></div>
+    <div><label>Or upload a CSV file</label><label class="btn" style="display:block;text-align:center;margin:0">Choose file<input type="file" accept=".csv,text/csv" hidden onchange="bulkFile(this.files[0])"></label>
+     <div class="hint"><a href="#" onclick="bulkTemplate();return false">Download template</a> (columns: regulator, name, url)</div></div></div>
+   <div><label for="b2">Page addresses, one per line</label><textarea id="b2" style="min-height:150px;font:12.5px/1.5 Consolas,monospace" placeholder="https://www.rbi.org.in/Scripts/NotificationUser.aspx&#10;RBI Circulars | https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx&#10;TRAI | TRAI Regulations | https://www.trai.gov.in/..." oninput="BULK=[];$('#bout').innerHTML=''"></textarea>
+     <div class="hint">Each line can be: <b>URL</b> &nbsp;or&nbsp; <b>Page name | URL</b> &nbsp;or&nbsp; <b>Regulator | Page name | URL</b>. Pasting from Excel works too.</div></div>
+   <label class="sw"><input type="checkbox" id="b3"><span><b>Use browser mode for these pages</b><div class="hint">Only for pages that build themselves with JavaScript. Slower. Can be changed per source later.</div></span></label>
+   <div id="bout"></div></div>
+   <div class="mf"><button class="btn" onclick="bulkCheck()" style="margin-right:auto">Check</button><button class="btn" onclick="closeDrawer()">Cancel</button><button class="btn pri" id="bgo" onclick="bulkGo()">Import</button></div>`;
+  $("#veil").classList.add("on");$("#modal").classList.add("on");
+}
+function bulkParse(){
+  const def=$("#b1").value.trim(); const rows=[];
+  $("#b2").value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+    const parts=l.split(/\s*[|	]\s*/).map(x=>x.trim()); let ui=parts.findIndex(x=>/^https?:\/\//i.test(x)); if(ui<0)ui=parts.length-1;
+    const url=parts[ui]||"", pre=parts.slice(0,ui); let reg=def,name="";      // keep blank cells so columns stay in place
+    if(pre.length>=2){reg=pre[0]||def;name=pre[1]} else if(pre.length==1){name=pre[0]}
+    rows.push({regulator:reg,name,url});
+  }); return rows;
+}
+function bulkCheck(){
+  BULK=bulkParse(); const seen=new Set();
+  if(!BULK.length){$("#bout").innerHTML=`<div class="testout" style="color:var(--bad);border-color:var(--bad)">Add at least one address first.</div>`;return false}
+  const bad=BULK.map(r=>{const k=r.url.toLowerCase().replace(/#.*$/,"").replace(/\/$/,"");
+    if(!/^https?:\/\/[^\s\/]+\S*$/i.test(r.url))return "Not a valid web address";if(!r.regulator)return "Regulator missing";if(seen.has(k))return "Repeated in this list";seen.add(k);return ""});
+  const ok=bad.filter(x=>!x).length;
+  $("#bout").innerHTML=`<div class="testout"><b style="color:${ok?"var(--ok)":"var(--bad)"}">${ok} of ${BULK.length} row(s) ready to import.</b>${ok<BULK.length?" The rest will be skipped:":""}
+   <div style="max-height:190px;overflow:auto;margin-top:8px"><table class="tbl" style="font-size:12.5px"><tbody>${BULK.map((r,i)=>`<tr><td style="padding:6px 8px"><b>${E(r.regulator||"?")}</b></td><td style="padding:6px 8px">${E(r.name)||'<span class="muted">(name from address)</span>'}</td><td style="padding:6px 8px;max-width:220px" class="clip">${E(r.url)}</td>
+    <td style="padding:6px 8px;white-space:nowrap">${bad[i]?`<span class="pill bad">${E(bad[i])}</span>`:`<span class="pill ok">Ready</span>`}</td></tr>`).join("")}</tbody></table></div></div>`;
+  return ok>0;
+}
+const bulkGo=guard(async()=>{
+  if(!bulkCheck())return; const r=await api("sources/bulk",{method:"POST",body:JSON.stringify({rows:BULK,render_js:$("#b3").checked?1:0})});
+  const skipped=r.results.filter(x=>x.status!="added");
+  $("#bout").innerHTML=`<div class="testout"><b style="color:var(--ok)">${r.added} source(s) added.</b>${skipped.length?` ${skipped.length} skipped:<ul>${skipped.map(x=>`<li>Row ${x.row}: ${E(x.message)}</li>`).join("")}</ul>`:""}</div>`;
+  $("#bgo").style.display="none"; toast(`${r.added} source(s) added`); go();
+});
+const bulkFile=f=>{if(!f)return;const rd=new FileReader();rd.onload=()=>{
+  const rows=[];let row=[],cell="",q=false,t=String(rd.result).replace(/^\uFEFF/,"");
+  for(let i=0;i<t.length;i++){const ch=t[i];
+    if(q){if(ch=='"'&&t[i+1]=='"'){cell+='"';i++}else if(ch=='"')q=false;else cell+=ch}
+    else if(ch=='"')q=true;else if(ch==","){row.push(cell);cell=""}else if(ch=="\n"){row.push(cell);rows.push(row);row=[];cell=""}else if(ch!="\r")cell+=ch}
+  if(cell||row.length){row.push(cell);rows.push(row)}
+  const head=(rows[0]||[]).map(x=>x.trim().toLowerCase()), hasHead=head.includes("url"), ix=n=>head.indexOf(n);
+  const body=(hasHead?rows.slice(1):rows).filter(r=>r.some(x=>x.trim()));
+  $("#b2").value=body.map(r=>hasHead?[r[ix("regulator")]||"",r[ix("name")]||"",r[ix("url")]||""].map(x=>x.trim()).join(" | "):r.map(x=>x.trim()).join(" | ")).join("\n");
+  toast(`${body.length} row(s) loaded from ${f.name}. Review them, then click Check.`);BULK=[];$("#bout").innerHTML=""};rd.readAsText(f)};
+const bulkTemplate=()=>{const a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["regulator,name,url\nRBI,RBI Circulars,https://www.rbi.org.in/Scripts/BS_CircularIndexDisplay.aspx\nTRAI,TRAI Regulations,https://www.trai.gov.in/\n"],{type:"text/csv"}));a.download="sources_template.csv";a.click()};
 
 /* ============================== DAILY UPDATE (email preview + approval) ============================== */
 let RPT=[],selR=null;

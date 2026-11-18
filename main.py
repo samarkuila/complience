@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from apscheduler.schedulers.background import BackgroundScheduler
 import db, crawler, paragraphs
+from urllib.parse import urlparse
 app = FastAPI(title="Regulatory Crawler")
 DECISIONS = {"information_only", "other_function", "potential_future", "implementation_required", "not_nbfc_relevant"}
 REPORTS = pathlib.Path("data/reports")
@@ -123,6 +124,37 @@ def delete_source(sid: int, x_user: str = Header("compliance_user")):
     if c.execute("SELECT 1 FROM crawls WHERE source_id=? UNION SELECT 1 FROM items WHERE source_id=? LIMIT 1", (sid, sid)).fetchone():
         raise HTTPException(409, "This source has crawl history and cannot be deleted. Deactivate it instead - its past updates stay on record.")
     c.execute("DELETE FROM sources WHERE id=?", (sid,)); db.audit(c, x_user, "source_deleted", str(sid)); c.commit(); return {"ok": True}
+KNOWN_REGULATORS = ["RBI", "TRAI", "UIDAI", "CERSAI", "CKYC", "NPCI", "MEITY", "eGazette", "FIU India", "NFRA", "UNSC", "MHA", "IRDAI"]  # suggestions only
+class BulkRow(BaseModel):
+    regulator: str = ""; name: str = ""; url: str
+class BulkIn(BaseModel):
+    rows: list[BulkRow]; render_js: int = 0
+def _norm_url(u): return re.sub(r"#.*$", "", u.strip().lower()).rstrip("/")
+def _auto_name(url):
+    u = urlparse(url); return ((u.netloc.replace("www.", "") + u.path).strip("/") or url)[:70]
+@app.get("/api/regulators")
+def regulators():
+    return sorted(set(KNOWN_REGULATORS) | {r["regulator"] for r in q("SELECT DISTINCT regulator FROM sources")}, key=str.lower)
+@app.post("/api/sources/bulk")
+def bulk_add(b: BulkIn, x_user: str = Header("compliance_user")):
+    """Add many source pages at once. Each row is checked and reported separately; bad rows never block good ones."""
+    if not b.rows: raise HTTPException(400, "Nothing to import")
+    if len(b.rows) > 500: raise HTTPException(400, "Please import at most 500 rows at a time")
+    c = db.conn(); known = KNOWN_REGULATORS + [r["regulator"] for r in c.execute("SELECT DISTINCT regulator FROM sources")]
+    seen = {_norm_url(r["url"]) for r in c.execute("SELECT url FROM sources")}; names = {r["name"].lower() for r in c.execute("SELECT name FROM sources")}
+    out, added = [], 0
+    for n, r in enumerate(b.rows, 1):
+        url = r.url.strip(); reg = next((k for k in known if k.lower() == r.regulator.strip().lower()), r.regulator.strip())
+        if not re.match(r"^https?://[^\s/]+\S*$", url, re.I): out.append({"row": n, "url": url, "status": "invalid", "message": "Not a valid web address (must start with http:// or https://)"}); continue
+        if not reg: out.append({"row": n, "url": url, "status": "invalid", "message": "Regulator is missing"}); continue
+        if _norm_url(url) in seen: out.append({"row": n, "url": url, "status": "duplicate", "message": "Already in the register"}); continue
+        name = r.name.strip() or _auto_name(url); base, k = name, 2
+        while name.lower() in names: name = f"{base} ({k})"; k += 1
+        c.execute("INSERT INTO sources(regulator,name,url,render_js) VALUES(?,?,?,?)", (reg, name, url, b.render_js))
+        seen.add(_norm_url(url)); names.add(name.lower()); added += 1
+        out.append({"row": n, "url": url, "status": "added", "message": f"Added as {reg} / {name}"})
+    db.audit(c, x_user, "sources_bulk_added", f"{added} added, {len(b.rows) - added} skipped, of {len(b.rows)} rows"); c.commit(); c.close()
+    return {"added": added, "skipped": len(b.rows) - added, "results": out}
 @app.post("/api/sources/test")
 def test_source(t: TestIn):
     """Dry run for the add/edit form: shows what the crawler would see on this page, saves nothing."""
